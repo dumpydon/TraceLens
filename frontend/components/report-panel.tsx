@@ -1,0 +1,7 @@
+import type { Report } from "@/lib/types";
+
+export function ReportPanel({ report }: { report: Report | null }) {
+  if (!report) return <div className="empty"><div><strong>Diagnosis pending</strong>The verified report will appear here without layout shift.</div></div>;
+  const evidenceConfidence = report.evidence_confidence;
+  return <div className="panel-body"><div className="report-title">{report.root_cause}</div><p className="subtle">{report.summary}</p>{evidenceConfidence ? <div className="confidence" title={evidenceConfidence.explanation}><span>Evidence confidence</span><b className={`confidence-value ${evidenceConfidence.level}`}>{evidenceConfidence.level.toUpperCase()} · {evidenceConfidence.score}%</b></div> : report.confidence != null ? <div className="confidence legacy-confidence"><span>Model confidence (legacy)</span><b>{Math.round(report.confidence * 100)}%</b></div> : null}<hr className="section-rule" /><h3>Evidence</h3>{report.evidence.map((item) => <div className="citation" key={item.evidence_id}><span className="citation-id">{item.evidence_id}</span><span className="citation-claim">{item.claim}</span></div>)}<hr className="section-rule" /><h3>Recommended actions</h3><ol className="action-list">{report.recommended_actions.map((item) => <li key={item}>{item}</li>)}</ol>{report.limitations.length > 0 && <><hr className="section-rule" /><h3>Limitations</h3><ul className="action-list">{report.limitations.map((item) => <li key={item}>{item}</li>)}</ul></>}</div>;
+}

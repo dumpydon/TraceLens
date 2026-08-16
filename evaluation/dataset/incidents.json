@@ -1,0 +1,33 @@
+[
+  {
+    "scenario": "baseline",
+    "expected_root_cause_category": "healthy",
+    "expected_affected_service": "none",
+    "important_expected_evidence": ["health:checkout-service", "health:payment-service"]
+  },
+  {
+    "scenario": "payment_latency",
+    "expected_root_cause_category": "payment_latency",
+    "expected_affected_service": "payment-service",
+    "important_expected_evidence": ["UpstreamPaymentTimeout", "payment.charge.completed"]
+  },
+  {
+    "scenario": "payment_failure",
+    "expected_root_cause_category": "payment_failure",
+    "expected_affected_service": "payment-service",
+    "important_expected_evidence": ["ProviderDeclinedError", "UpstreamPaymentHTTP502"]
+  },
+  {
+    "scenario": "bad_deployment",
+    "expected_root_cause_category": "bad_deployment",
+    "expected_affected_service": "payment-service",
+    "important_expected_evidence": ["ProviderConfigurationError", "deployment:payment-service:2.5.0"]
+  },
+  {
+    "scenario": "connection_exhaustion",
+    "expected_root_cause_category": "connection_exhaustion",
+    "expected_affected_service": "payment-service",
+    "important_expected_evidence": ["ConnectionPoolExhausted", "health:payment-service"]
+  }
+]
+
