@@ -1,279 +1,433 @@
 # TraceLens
 
-TraceLens is an evidence-first software incident investigation platform for a controlled,
-executable Incident Lab. It correlates real service logs, deployment metadata, health checks, and
-retrieved operational knowledge; then it produces a typed, verified report whose citations must
-resolve to collected evidence.
+**Evidence-driven incident investigation with LangGraph, RAG, and runtime telemetry.**
 
-The project exists to demonstrate where graph orchestration, retrieval, structured model output,
-durable execution, and evaluation naturally fit an incident workflow. It is not a chatbot and it
-does not take autonomous production actions.
+TraceLens investigates failures in a small distributed system by correlating service logs, deployment history, health signals, and operational knowledge. It turns that evidence into a structured root-cause report with citations back to the sources used during the investigation.
 
-AI-powered incident investigation using LangGraph, RAG, runtime telemetry,
-and evidence-grounded root-cause analysis.
+Rather than asking an LLM to diagnose an incident in a single call, TraceLens runs a bounded investigation workflow:
 
-[Live Demo](https://tracelens-seven.vercel.app)
+**Context → Runtime → Retrieval → Hypothesis → Verification → Report**
 
-## What TraceLens Does
+**[Live Demo](https://tracelens-seven.vercel.app)**
 
-TraceLens investigates distributed-system incidents by correlating runtime
-telemetry, deployment history, service health, and operational knowledge.
-Instead of simply asking an LLM to diagnose an incident, TraceLens runs a
-structured investigation workflow:
+> The hosted backend runs on Render's free tier and may take a short time to wake after a period of inactivity.
 
-Context → Runtime → Retrieval → Hypothesis → Verification → Report
+---
 
+## Demo
 
-## Screenshots
+<!--
+Replace this block with the TraceLens demo GIF later.
 
-The primary product surfaces are Overview, Incidents, Incident Detail, Incident Lab, and
-Evaluations. Screenshots are not checked in as static marketing artifacts; run the local stack to
-see the screens backed by the current runtime and evaluation data.
+Recommended:
+docs/assets/tracelens-demo.gif
 
-## System architecture
+Example:
+![TraceLens investigation demo](docs/assets/tracelens-demo.gif)
+-->
 
-```mermaid
-flowchart LR
-    Browser["Next.js dashboard"] -->|"REST / SSE"| API["TraceLens FastAPI"]
-    API --> Graph["Bounded LangGraph"]
-    Graph --> Runtime["Logs + health + deployments"]
-    Graph --> RAG["Chroma MMR + operational docs"]
-    Graph --> Checkpoints["SQLite local / Postgres hosted checkpoints"]
-    Graph -.->|"optional tracing"| LangSmith
-    Lab["Checkout → Payment"] --> Runtime
-    Evaluation --> Lab
-    Evaluation --> Graph
+**Demo GIF coming soon**
+
+<!-- Optional screenshots can go directly below the GIF.
+
+| Incident Lab | Investigation |
+| --- | --- |
+| ![Incident Lab](docs/assets/incident-lab.png) | ![Investigation](docs/assets/investigation.png) |
+
+-->
+
+---
+
+## Why TraceLens?
+
+LLMs are good at explaining logs, but incident investigation needs more than an explanation.
+
+A useful diagnosis has to answer:
+
+- What actually happened?
+- Which services were involved?
+- What changed before the failure?
+- Which runtime signals support the diagnosis?
+- Does operational documentation corroborate it?
+- Can every important claim be traced back to evidence?
+
+TraceLens separates **evidence collection** from **model reasoning**.
+
+Runtime context is collected deterministically. Operational knowledge is retrieved through RAG. LangGraph controls the investigation loop. Model-generated evidence references are validated before they are allowed into the final report.
+
+The result is an investigation that can be inspected rather than just trusted.
+
+---
+
+## How an investigation works
+
+```text
+Incident
+   │
+   ▼
+Collect runtime context
+   │
+   ├── service logs
+   ├── deployment history
+   └── health checks
+   │
+   ▼
+Analyze runtime evidence
+   │
+   ▼
+Retrieve operational knowledge
+   │
+   ├── runbooks
+   ├── architecture docs
+   └── previous postmortems
+   │
+   ▼
+Generate hypothesis
+   │
+   ▼
+Verify against collected evidence
+   │
+   ├── insufficient evidence ──► refine retrieval ──┐
+   │                                                │
+   └── sufficient evidence                         │
+          │                                         │
+          ▼                                         │
+   Generate report ◄────────────────────────────────┘
 ```
 
-See [architecture](docs/architecture.md) for component and trust boundaries and
-[investigation flow](docs/investigation-flow.md) for every node, state field, and routing rule.
+The reasoning loop is bounded to prevent an investigation from retrying indefinitely. If the available evidence is still incomplete, TraceLens produces the best supported report it can and records the remaining limitations.
 
-## Investigation workflow
-
-`load_incident → collect_runtime_context → analyze_runtime_evidence →
-retrieve_operational_knowledge → generate_hypothesis → verify_hypothesis`
-
-Sufficient evidence routes to report generation. Insufficient evidence refines the retrieval query
-and loops through retrieval, hypothesis, and verification, with three total attempts maximum. When
-the bound is reached, TraceLens produces the best supported report and states its limitations.
-
-Important model calls use Pydantic structured output. Model-produced evidence IDs are resolved
-against the evidence registry; unknown IDs are removed and recorded. With no OpenAI key, a typed
-deterministic local reasoner keeps the lab, graph, persistence, UI, and tests usable and labels that
-limitation in reports.
+---
 
 ## Incident Lab
 
-The lab contains two FastAPI services. Checkout calls payment over HTTP, forwards request IDs, and
-enforces a one-second timeout. Five scenarios change actual payment behavior:
+TraceLens includes an executable Incident Lab so investigations operate on reproducible failures instead of fabricated logs.
 
-- `baseline`
-- `payment_latency`
-- `payment_failure`
-- `bad_deployment`
-- `connection_exhaustion`
+The lab models a checkout service calling a payment service over HTTP. Both services emit correlated runtime evidence using the same request ID.
 
-Logs are JSONL records under `data/runtime`. Scenario control state is ground truth and is never
-read by investigation nodes. See [Incident Lab](incident_lab/README.md).
+Five scenarios are currently available:
 
-## RAG pipeline
+| Scenario | Behavior |
+| --- | --- |
+| `baseline` | Checkout and payment operate normally |
+| `payment_latency` | Payment exceeds checkout's timeout budget |
+| `payment_failure` | The upstream payment operation fails |
+| `bad_deployment` | Payment runs with invalid provider configuration |
+| `connection_exhaustion` | Payment's connection pool becomes unavailable |
 
-Ten focused Markdown knowledge sections cover service architecture, runbooks, and prior incidents.
-Ingestion preserves source/type/service/failure metadata, splits at 800 characters with 120 overlap,
-uses configured OpenAI embeddings, and persists to Chroma. The default retriever is MMR (`k=5`,
-`fetch_k=10`). A local hash embedding exists only for credential-free development and tests.
+For example, under `payment_latency`, checkout can return a `504 UpstreamPaymentTimeout` while the corresponding payment request completes later. TraceLens has to correlate those events rather than infer the failure from scenario state.
 
-Future similarity comparisons, MultiQuery, contextual compression, and corrective RAG are listed
-in the [roadmap](docs/roadmap.md), not implemented in V1.
+**The investigation graph never reads the active scenario as ground truth.**
 
-## Persistence and streaming
+That separation keeps the lab useful for testing the investigation system itself.
 
-SQLite stores local application data, while hosted V1 uses PostgreSQL selected through
-`DATABASE_URL`. Local graph checkpoints use `AsyncSqliteSaver`; hosted checkpoints use the official
-`AsyncPostgresSaver`. Both preserve the incident ID as `thread_id`.
-`POST /api/incidents/{id}/resume` continues a terminated investigation from the latest checkpoint.
-The SSE endpoint replays events by ID, so reconnecting clients do not lose workflow progress.
+---
 
-## LangSmith observability
+## Architecture
 
-Set `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY`, and optionally `LANGSMITH_PROJECT`. LangGraph and
-LangChain traces include incident/thread ID, environment, graph version, and retriever strategy.
-Tracing is disabled cleanly when credentials are absent; keys remain backend-only.
+```mermaid
+flowchart LR
+    Browser["Next.js UI"] -->|"REST + SSE"| API["FastAPI"]
+
+    API --> Graph["LangGraph investigation"]
+
+    Graph --> Runtime["Runtime evidence"]
+    Graph --> RAG["Operational knowledge"]
+    Graph --> Checkpoints["Durable checkpoints"]
+
+    Runtime --> Logs["Logs"]
+    Runtime --> Deployments["Deployments"]
+    Runtime --> Health["Health"]
+
+    RAG --> Docs["Runbooks + postmortems"]
+
+    Lab["Incident Lab<br/>Checkout → Payment"] --> Runtime
+
+    Graph --> Report["Evidence-backed report"]
+    Graph -.-> LangSmith["LangSmith"]
+```
+
+### Investigation graph
+
+```text
+load_incident
+      ↓
+collect_runtime_context
+      ↓
+analyze_runtime_evidence
+      ↓
+retrieve_operational_knowledge
+      ↓
+generate_hypothesis
+      ↓
+verify_hypothesis
+      │
+      ├── insufficient ──► retrieve again
+      │
+      └── sufficient
+              ↓
+        generate_report
+```
+
+More detail is available in:
+
+- [`docs/architecture.md`](docs/architecture.md)
+- [`docs/investigation-flow.md`](docs/investigation-flow.md)
+
+---
+
+## Key engineering decisions
+
+### Evidence-backed reasoning
+
+Logs, health checks, deployments, and retrieved documents are registered as evidence during an investigation.
+
+The model references evidence by ID, and those IDs are resolved against the collected evidence registry before the report is accepted. Unknown references are discarded rather than presented as valid citations.
+
+### Bounded LangGraph orchestration
+
+LangGraph owns the investigation state and routing.
+
+If verification determines that evidence is insufficient, the graph can refine retrieval and try again. The loop has a fixed upper bound so execution remains predictable.
+
+### Durable investigations
+
+Each incident is also a LangGraph thread.
+
+Local development uses SQLite checkpoints, while the hosted deployment stores checkpoints in PostgreSQL. An interrupted investigation can resume from its persisted state instead of restarting from the beginning.
+
+### RAG over operational knowledge
+
+The retrieval corpus contains architecture documentation, runbooks, and previous postmortems.
+
+Documents are chunked with metadata and retrieved using MMR so the reasoning stage receives a small set of relevant but non-redundant operational references.
+
+### Live investigation progress
+
+The backend emits semantic investigation events over Server-Sent Events (SSE).
+
+The UI can display progress through context collection, retrieval, hypothesis generation, verification, and report generation without exposing private model reasoning.
+
+### Observability
+
+LangSmith tracing can be enabled for LangChain and LangGraph execution.
+
+Traces include investigation identifiers and graph metadata, making it possible to inspect model calls, retrieval behavior, and graph execution outside the application UI.
+
+---
 
 ## Evaluation
 
-The evaluation boundary owns scenario ground truth. `make eval` activates each scenario, generates
-real traffic, runs the production investigation graph, and measures:
+TraceLens includes a small reproducible evaluation harness built around the Incident Lab.
 
-- exact root-cause category correctness
-- exact affected-service correctness
-- retrieval relevance from preserved failure metadata
-- evidence groundedness by citation resolution
+For each known scenario, the evaluator can generate real traffic, run the same investigation graph used by the application, and compare the result against scenario ground truth.
 
-The five-example dataset favors reproducibility over synthetic volume. Summaries persist locally
-for the Evaluations page. See [evaluation methodology](evaluation/README.md).
+Current evaluation signals include:
 
-## Technology stack
+- root-cause classification
+- affected-service identification
+- retrieval relevance
+- evidence citation validity
 
-- Python 3.11+, FastAPI, Pydantic, LangChain, LangGraph, Chroma, SQLite, LangSmith, pytest
-- Next.js 16, React 19, TypeScript, Tailwind CSS 4, Lucide icons
-- REST for records and control; SSE for investigation progress
+The goal is not to manufacture a large benchmark. The dataset is intentionally small enough that every failure can be reproduced and inspected.
+
+See [`evaluation/README.md`](evaluation/README.md) for the evaluation flow.
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Orchestration | LangGraph |
+| LLM / embeddings | OpenAI |
+| Retrieval | LangChain + Chroma |
+| Backend | Python, FastAPI, Pydantic |
+| Frontend | Next.js, React, TypeScript |
+| Local persistence | SQLite |
+| Hosted persistence | PostgreSQL / Supabase |
+| Streaming | Server-Sent Events |
+| Observability | LangSmith |
+| Testing | pytest |
+| Frontend hosting | Vercel |
+| Backend hosting | Render |
+
+---
 
 ## Repository structure
 
 ```text
-backend/       API, domain models, graph, RAG, persistence, tests
-incident_lab/  checkout/payment services, scenarios, runtime storage
-knowledge/     architecture, runbooks, postmortems
-evaluation/    ground-truth dataset and evaluators
-frontend/      Next.js operations interface
-docs/          architecture, graph flow, roadmap
+TraceLens/
+├── backend/          FastAPI API, LangGraph workflow, RAG and persistence
+├── frontend/         Next.js operations interface
+├── incident_lab/     Checkout/payment services and failure scenarios
+├── knowledge/        Runbooks, architecture notes and postmortems
+├── evaluation/       Evaluation dataset and evaluators
+├── docs/             Architecture, investigation flow and roadmap
+└── Makefile          Local development commands
 ```
 
-## Local development
+---
 
-Requirements: Python 3.11 or newer, Node.js 20 or newer, and npm.
+## Run locally
+
+### Requirements
+
+- Python 3.11+
+- Node.js 20+
+- npm
+
+Clone the repository and configure the environment:
 
 ```bash
+git clone git@github.com:dumpydon/TraceLens.git
+cd TraceLens
+
 cp .env.example .env
+
 make install
 make ingest
 ```
 
-Open four terminals:
+Add your OpenAI credentials to `.env` if you want to run the model-backed investigation path.
+
+Start the local system in four terminals:
+
+**Payment service**
 
 ```bash
 make lab-payment
+```
+
+**Checkout service**
+
+```bash
 make lab-checkout
+```
+
+**TraceLens backend**
+
+```bash
 make backend
+```
+
+**Frontend**
+
+```bash
 make frontend
 ```
 
-Open `http://127.0.0.1:3000`. The frontend expects the backend at
-`http://127.0.0.1:8000` unless `NEXT_PUBLIC_API_BASE_URL` overrides it.
-
-## Environment variables
-
-| Variable | Purpose |
-|---|---|
-| `ENVIRONMENT` | `development` locally; `production` enables the embedded hosted lab |
-| `OPENAI_API_KEY` | Enables OpenAI structured reasoning and embeddings |
-| `OPENAI_CHAT_MODEL` | Structured reasoning model |
-| `OPENAI_EMBEDDING_MODEL` | Chroma embedding model |
-| `LANGSMITH_TRACING` | Enables tracing when set to `true` with a key |
-| `LANGSMITH_API_KEY` | Backend-only LangSmith credential |
-| `LANGSMITH_PROJECT` | Trace project, default `tracelens-dev` |
-| `CHROMA_PERSIST_DIRECTORY` | Local vector-store path |
-| `DATABASE_URL` | `sqlite:///...` locally; Supabase PostgreSQL when hosted |
-| `CHECKPOINT_DATABASE_PATH` | LangGraph SQLite checkpoint file |
-| `RUNTIME_DIRECTORY` | Incident Lab logs and deployment metadata |
-| `FRONTEND_ORIGIN` | Exact hosted Vercel origin allowed by CORS |
-| `NEXT_PUBLIC_API_BASE_URL` | Browser-visible API origin |
-
-## Hosted V1 architecture
-
-Hosted V1 keeps the same product and API boundaries with four managed services:
-
-- Vercel Hobby serves the existing Next.js frontend.
-- One Render Free Web Service runs FastAPI, LangGraph, and both Incident Lab applications.
-- Supabase Free PostgreSQL stores application records, checkpoints, lab state, deployments, and
-  batch-isolated runtime logs.
-- OpenAI supplies chat and embedding APIs; LangSmith receives the existing traces.
-
-The hosted checkout service invokes payment through an internal ASGI transport. Its one-second
-timeout shields the payment task from cancellation, so a delayed payment can still complete and
-write correlated evidence. Local development retains the separate checkout and payment processes.
-Chroma remains local to the Render instance and is rebuilt from `knowledge/` when its collection is
-missing or empty.
-
-### Supabase
-
-Create a standard Supabase PostgreSQL project and copy its connection string into Render as
-`DATABASE_URL`. Prefer the session-pooler URL for a persistent IPv4 backend. URL-encode special
-characters in the database password. Startup creates the V1 application, Incident Lab, and official
-LangGraph checkpoint tables idempotently; no Alembic or Supabase SDK is required.
-
-### Render
-
-Create one Python Web Service connected to this GitHub repository and production branch `main`.
-Leave Root Directory at the repository root and configure:
+Then open:
 
 ```text
-Build command: pip install -e ./backend
-Start command: PYTHONPATH=backend:. uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
-Health check: /health
+http://127.0.0.1:3000
 ```
 
-Set these backend values without committing secrets:
+---
 
-```dotenv
-ENVIRONMENT=production
-DATABASE_URL=
-FRONTEND_ORIGIN=https://your-project.vercel.app
-OPENAI_API_KEY=
-OPENAI_CHAT_MODEL=gpt-4.1-mini
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=
-LANGSMITH_PROJECT=tracelens-prod
-```
+## Try an incident
 
-Render Free services may sleep after inactivity. The frontend reports that the demo backend is
-waking and the SSE client reconnects without a keep-alive workaround.
-
-### Vercel
-
-Import the same GitHub repository with Root Directory `frontend`, Framework Preset `Next.js`, and
-Production Branch `main`. Keep the detected install/build/output settings and add:
-
-```dotenv
-NEXT_PUBLIC_API_BASE_URL=https://your-render-service.onrender.com
-```
-
-No `vercel.json`, Dockerfile, or custom CI is required. With both providers connected to GitHub,
-`git push origin main` triggers the Render backend and Vercel frontend deployments independently.
-
-## Example investigation
+Activate the payment-latency scenario:
 
 ```bash
-.venv/bin/python -m incident_lab.scenarios reset
 .venv/bin/python -m incident_lab.scenarios activate payment_latency
+```
+
+Generate traffic:
+
+```bash
 .venv/bin/python -m incident_lab.scenarios traffic --count 12
 ```
 
-In the UI, create an incident and start its investigation. Checkout logs will show 504 timeouts near
-one second; payment logs with the same request IDs will complete near 1.8 seconds. The graph should
-retrieve the payment latency runbook/postmortem and report payment latency beyond checkout's budget,
-with resolvable log and document citations.
+Then open the Incident Lab in the UI, create an incident from the generated traffic, and start an investigation.
 
-Run checks and the evaluation dataset with:
+A successful investigation should correlate checkout timeouts with the matching slower payment requests, retrieve relevant operational documentation, verify the hypothesis, and produce an evidence-backed report.
+
+Reset the lab when finished:
+
+```bash
+.venv/bin/python -m incident_lab.scenarios reset
+```
+
+---
+
+## Tests
+
+Run the backend and frontend checks with:
 
 ```bash
 make test
 make lint
+```
+
+Run the incident evaluation suite with:
+
+```bash
 make eval
 ```
 
-## Design principles
+---
 
-- Evidence over eloquence
-- Deterministic collection and routing where ordinary code is reliable
-- Explicit checkpoint-friendly incident state
-- Bounded reasoning and typed outputs
-- Observable semantic progress without chain-of-thought exposure
-- Compact operations UX rather than AI-product decoration
+## Deployment
 
-## Limitations
+The public demo uses a deliberately small deployment footprint:
 
-V1 reads local JSONL evidence rather than an external observability platform. Health checks are
-point-in-time and intentionally shallow. Evidence confidence is a deterministic support score
-derived from unique correlated runtime requests, corroborating sources, contradictions, unresolved
-questions, and verification sufficiency. It is not a calibrated probability of diagnosis
-correctness. The local embedding/reasoning fallbacks support development but do not replace the
-configured OpenAI path for evaluation of model behavior. Authentication, external integrations,
-automated remediation, and multi-tenant operation are out of scope.
+```text
+Vercel
+   │
+   │ Next.js
+   ▼
+Render
+   │
+   │ FastAPI + LangGraph + Incident Lab
+   ▼
+Supabase PostgreSQL
+
+OpenAI     → reasoning + embeddings
+LangSmith  → traces
+```
+
+The frontend and backend are connected to the GitHub repository, so updates to the production branch can be deployed independently by Vercel and Render.
+
+Deployment-specific configuration is intentionally kept outside this README so the project overview stays focused on the system itself.
+
+---
+
+## Current scope
+
+TraceLens V1 focuses on evidence-grounded investigation of reproducible incidents.
+
+It currently does **not** attempt to be a production observability platform or autonomous remediation system. The Incident Lab provides controlled runtime evidence, and health checks are intentionally lightweight.
+
+Authentication, multi-tenant operation, external observability integrations, and automated remediation are outside the current V1 scope.
+
+This boundary is intentional: the current version focuses on making the investigation pipeline observable, reproducible, resumable, and testable before expanding the system around it.
+
+---
 
 ## Roadmap
 
-See [docs/roadmap.md](docs/roadmap.md). Future work is deliberately documented without scaffolding
-unused systems in V1.
+The next iterations are planned around deeper investigation capabilities rather than adding more UI surface.
+
+Areas under consideration include:
+
+- human-in-the-loop investigation and approval
+- stronger evaluation and regression testing
+- corrective and adaptive retrieval
+- richer incident scenarios
+- external observability integrations
+- MCP-based tooling and context access
+- improved investigation replay and comparison
+- production-oriented authentication and tenancy
+
+See [`docs/roadmap.md`](docs/roadmap.md) for the longer-term direction.
+
+---
+
+## Project status
+
+**V1 is deployed and functional.**
+
+The hosted application supports the complete path from generating an Incident Lab failure through evidence collection, RAG, LangGraph investigation, verification, report generation, persistence, and LangSmith tracing.
+
+Active development continues separately from the stable V1 release.
