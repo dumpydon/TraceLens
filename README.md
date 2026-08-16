@@ -9,6 +9,21 @@ The project exists to demonstrate where graph orchestration, retrieval, structur
 durable execution, and evaluation naturally fit an incident workflow. It is not a chatbot and it
 does not take autonomous production actions.
 
+AI-powered incident investigation using LangGraph, RAG, runtime telemetry,
+and evidence-grounded root-cause analysis.
+
+[Live Demo](https://tracelens-seven.vercel.app)
+
+## What TraceLens Does
+
+TraceLens investigates distributed-system incidents by correlating runtime
+telemetry, deployment history, service health, and operational knowledge.
+Instead of simply asking an LLM to diagnose an incident, TraceLens runs a
+structured investigation workflow:
+
+Context → Runtime → Retrieval → Hypothesis → Verification → Report
+
+
 ## Screenshots
 
 The primary product surfaces are Overview, Incidents, Incident Detail, Incident Lab, and
