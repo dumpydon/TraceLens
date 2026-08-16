@@ -16,7 +16,7 @@ Instead of asking an LLM to diagnose an incident in a single call, TraceLens run
 
 ## Demo
 
-![TraceLens incident investigation demo](docs/tracelens-demo.gif)
+![TraceLens incident investigation demo](docs/TraceLens-demo.gif)
 **Demo GIF **
 
 ## Demo
