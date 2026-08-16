@@ -16,10 +16,10 @@ Instead of asking an LLM to diagnose an incident in a single call, TraceLens run
 
 ## Demo
 
-<!-- Replace this with the demo GIF later -->
+![TraceLens incident investigation demo](docs/tracelens-demo.gif)
+**Demo GIF **
 
-**Demo GIF coming soon**
-
+## Demo
 <!--
 ![TraceLens Demo](docs/assets/tracelens-demo.gif)
 -->
