@@ -23,7 +23,7 @@ flowchart LR
     API --> Graph["Bounded LangGraph"]
     Graph --> Runtime["Logs + health + deployments"]
     Graph --> RAG["Chroma MMR + operational docs"]
-    Graph --> Checkpoints["SQLite checkpoints"]
+    Graph --> Checkpoints["SQLite local / Postgres hosted checkpoints"]
     Graph -.->|"optional tracing"| LangSmith
     Lab["Checkout → Payment"] --> Runtime
     Evaluation --> Lab
@@ -73,11 +73,11 @@ in the [roadmap](docs/roadmap.md), not implemented in V1.
 
 ## Persistence and streaming
 
-SQLite stores incidents, durable semantic events, reports, and evaluation summaries.
-`langgraph-checkpoint-sqlite` stores a checkpoint after every graph super-step with the incident ID
-as `thread_id`. `POST /api/incidents/{id}/resume` continues a terminated investigation from the
-latest checkpoint. The SSE endpoint replays events by ID, so reconnecting clients do not lose
-workflow progress.
+SQLite stores local application data, while hosted V1 uses PostgreSQL selected through
+`DATABASE_URL`. Local graph checkpoints use `AsyncSqliteSaver`; hosted checkpoints use the official
+`AsyncPostgresSaver`. Both preserve the incident ID as `thread_id`.
+`POST /api/incidents/{id}/resume` continues a terminated investigation from the latest checkpoint.
+The SSE endpoint replays events by ID, so reconnecting clients do not lose workflow progress.
 
 ## LangSmith observability
 
@@ -115,7 +115,7 @@ frontend/      Next.js operations interface
 docs/          architecture, graph flow, roadmap
 ```
 
-## Local setup
+## Local development
 
 Requirements: Python 3.11 or newer, Node.js 20 or newer, and npm.
 
@@ -141,6 +141,7 @@ Open `http://127.0.0.1:3000`. The frontend expects the backend at
 
 | Variable | Purpose |
 |---|---|
+| `ENVIRONMENT` | `development` locally; `production` enables the embedded hosted lab |
 | `OPENAI_API_KEY` | Enables OpenAI structured reasoning and embeddings |
 | `OPENAI_CHAT_MODEL` | Structured reasoning model |
 | `OPENAI_EMBEDDING_MODEL` | Chroma embedding model |
@@ -148,10 +149,74 @@ Open `http://127.0.0.1:3000`. The frontend expects the backend at
 | `LANGSMITH_API_KEY` | Backend-only LangSmith credential |
 | `LANGSMITH_PROJECT` | Trace project, default `tracelens-dev` |
 | `CHROMA_PERSIST_DIRECTORY` | Local vector-store path |
-| `DATABASE_URL` | V1 `sqlite:///...` application database |
+| `DATABASE_URL` | `sqlite:///...` locally; Supabase PostgreSQL when hosted |
 | `CHECKPOINT_DATABASE_PATH` | LangGraph SQLite checkpoint file |
 | `RUNTIME_DIRECTORY` | Incident Lab logs and deployment metadata |
+| `FRONTEND_ORIGIN` | Exact hosted Vercel origin allowed by CORS |
 | `NEXT_PUBLIC_API_BASE_URL` | Browser-visible API origin |
+
+## Hosted V1 architecture
+
+Hosted V1 keeps the same product and API boundaries with four managed services:
+
+- Vercel Hobby serves the existing Next.js frontend.
+- One Render Free Web Service runs FastAPI, LangGraph, and both Incident Lab applications.
+- Supabase Free PostgreSQL stores application records, checkpoints, lab state, deployments, and
+  batch-isolated runtime logs.
+- OpenAI supplies chat and embedding APIs; LangSmith receives the existing traces.
+
+The hosted checkout service invokes payment through an internal ASGI transport. Its one-second
+timeout shields the payment task from cancellation, so a delayed payment can still complete and
+write correlated evidence. Local development retains the separate checkout and payment processes.
+Chroma remains local to the Render instance and is rebuilt from `knowledge/` when its collection is
+missing or empty.
+
+### Supabase
+
+Create a standard Supabase PostgreSQL project and copy its connection string into Render as
+`DATABASE_URL`. Prefer the session-pooler URL for a persistent IPv4 backend. URL-encode special
+characters in the database password. Startup creates the V1 application, Incident Lab, and official
+LangGraph checkpoint tables idempotently; no Alembic or Supabase SDK is required.
+
+### Render
+
+Create one Python Web Service connected to this GitHub repository and production branch `main`.
+Leave Root Directory at the repository root and configure:
+
+```text
+Build command: pip install -e ./backend
+Start command: PYTHONPATH=backend:. uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
+Health check: /health
+```
+
+Set these backend values without committing secrets:
+
+```dotenv
+ENVIRONMENT=production
+DATABASE_URL=
+FRONTEND_ORIGIN=https://your-project.vercel.app
+OPENAI_API_KEY=
+OPENAI_CHAT_MODEL=gpt-4.1-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=tracelens-prod
+```
+
+Render Free services may sleep after inactivity. The frontend reports that the demo backend is
+waking and the SSE client reconnects without a keep-alive workaround.
+
+### Vercel
+
+Import the same GitHub repository with Root Directory `frontend`, Framework Preset `Next.js`, and
+Production Branch `main`. Keep the detected install/build/output settings and add:
+
+```dotenv
+NEXT_PUBLIC_API_BASE_URL=https://your-render-service.onrender.com
+```
+
+No `vercel.json`, Dockerfile, or custom CI is required. With both providers connected to GitHub,
+`git push origin main` triggers the Render backend and Vercel frontend deployments independently.
 
 ## Example investigation
 

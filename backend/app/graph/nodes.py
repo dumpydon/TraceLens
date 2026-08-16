@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
 from app.core.config import Settings, get_settings
-from app.core.database import Database
+from app.core.database import Database, get_database
 from app.domain.models import (
     EvidenceItem,
     EvidenceKind,
@@ -44,10 +45,10 @@ def _reasoning_payload(item: Any) -> dict:
 class InvestigationNodes:
     def __init__(self, database: Database | None = None, settings: Settings | None = None):
         self.settings = settings or get_settings()
-        self.database = database or Database()
+        self.database = database or get_database()
         self.reasoner = StructuredReasoner(self.settings)
 
-    def emit(
+    async def emit(
         self,
         state: InvestigationState,
         event_type: InvestigationEventType,
@@ -55,7 +56,7 @@ class InvestigationNodes:
         summary: str,
         metadata: dict | None = None,
     ) -> None:
-        self.database.add_event(
+        await self.database.aadd_event(
             InvestigationEvent(
                 event_type=event_type,
                 incident_id=state["incident_id"],
@@ -66,12 +67,12 @@ class InvestigationNodes:
         )
 
     async def load_incident(self, state: InvestigationState) -> dict:
-        incident = self.database.get_incident(state["incident_id"])
+        incident = await self.database.aget_incident(state["incident_id"])
         if not incident:
             raise ValueError(f"Incident {state['incident_id']} does not exist")
-        self.database.update_incident_status(incident.id, IncidentStatus.INVESTIGATING)
+        await self.database.aupdate_incident_status(incident.id, IncidentStatus.INVESTIGATING)
         incident.status = IncidentStatus.INVESTIGATING
-        self.emit(
+        await self.emit(
             state,
             InvestigationEventType.CONTEXT_COLLECTION_STARTED,
             "context",
@@ -83,7 +84,8 @@ class InvestigationNodes:
         incident = state["incident"]
         errors = list(state["errors"])
         if incident and (incident.traffic_batch_id or incident.observation_started_at):
-            logs = read_logs(
+            logs = await asyncio.to_thread(
+                read_logs,
                 self.settings.runtime_directory,
                 traffic_batch_id=incident.traffic_batch_id,
                 observation_started_at=incident.observation_started_at,
@@ -94,7 +96,8 @@ class InvestigationNodes:
             errors.append(
                 "incident_evidence_scope_missing: legacy incident has no traffic batch or observation window"
             )
-        deployments = read_deployments(
+        deployments = await asyncio.to_thread(
+            read_deployments,
             self.settings.runtime_directory,
             as_of=incident.observation_ended_at if incident else None,
         )
@@ -143,14 +146,14 @@ class InvestigationNodes:
             )
             for item in health
         )
-        self.emit(
+        await self.emit(
             state,
             InvestigationEventType.LOGS_COLLECTED,
             "context",
             f"Collected {len(logs)} correlated request logs",
             {"count": len(logs)},
         )
-        self.emit(
+        await self.emit(
             state,
             InvestigationEventType.DEPLOYMENT_FOUND,
             "context",
@@ -186,7 +189,7 @@ class InvestigationNodes:
             except Exception as exc:  # noqa: BLE001 - model boundary must record provider failures
                 errors.append(f"runtime_analysis_structured_output: {type(exc).__name__}: {exc}")
                 analysis = fallback
-        self.emit(
+        await self.emit(
             state,
             InvestigationEventType.RUNTIME_ANALYSIS_COMPLETED,
             "runtime",
@@ -200,7 +203,7 @@ class InvestigationNodes:
         }
 
     async def retrieve_operational_knowledge(self, state: InvestigationState) -> dict:
-        self.emit(
+        await self.emit(
             state,
             InvestigationEventType.RETRIEVAL_STARTED,
             "retrieval",
@@ -229,7 +232,7 @@ class InvestigationNodes:
             )
             for document in documents
         ]
-        self.emit(
+        await self.emit(
             state,
             InvestigationEventType.DOCUMENTS_RETRIEVED,
             "retrieval",
@@ -267,7 +270,7 @@ class InvestigationNodes:
             except Exception as exc:  # noqa: BLE001 - model boundary must record provider failures
                 errors.append(f"hypothesis_structured_output: {type(exc).__name__}: {exc}")
                 hypothesis = fallback
-        self.emit(
+        await self.emit(
             state,
             InvestigationEventType.HYPOTHESIS_GENERATED,
             "hypothesis",
@@ -286,7 +289,7 @@ class InvestigationNodes:
         }
 
     async def verify_hypothesis(self, state: InvestigationState) -> dict:
-        self.emit(
+        await self.emit(
             state,
             InvestigationEventType.VERIFICATION_STARTED,
             "verify",
@@ -337,7 +340,7 @@ class InvestigationNodes:
             except Exception as exc:  # noqa: BLE001 - model boundary must record provider failures
                 errors.append(f"verification_structured_output: {type(exc).__name__}: {exc}")
                 verification = fallback
-        self.emit(
+        await self.emit(
             state,
             InvestigationEventType.VERIFICATION_COMPLETED,
             "verify",
@@ -365,9 +368,13 @@ class InvestigationNodes:
     async def refine_investigation(self, state: InvestigationState) -> dict:
         questions = state["verification"].unresolved_questions if state["verification"] else []
         query = " ".join(
-            [state["retrieval_query"], state["active_hypothesis"].suspected_failure_type, *questions]
+            [
+                state["retrieval_query"],
+                state["active_hypothesis"].suspected_failure_type,
+                *questions,
+            ]
         ).strip()
-        self.emit(
+        await self.emit(
             state,
             InvestigationEventType.INVESTIGATION_REFINED,
             "refine",
@@ -389,9 +396,7 @@ class InvestigationNodes:
             retrieved_documents=state["retrieved_documents"],
             incident=state["incident"],
         )
-        category = self._canonical_failure_type(
-            state["active_hypothesis"].suspected_failure_type
-        )
+        category = self._canonical_failure_type(state["active_hypothesis"].suspected_failure_type)
         if self.reasoner.enabled and state["verification"].is_sufficient and category is not None:
             try:
                 draft = await self.reasoner.invoke(
@@ -414,20 +419,27 @@ class InvestigationNodes:
                 valid = {item.id for item in state["evidence"]}
                 report.evidence = [item for item in report.evidence if item.evidence_id in valid]
                 if not report.evidence:
-                    errors.append("report_unknown_evidence_ids: all model citations were unresolved")
+                    errors.append(
+                        "report_unknown_evidence_ids: all model citations were unresolved"
+                    )
                     report = fallback
             except Exception as exc:  # noqa: BLE001 - model boundary must record provider failures
                 errors.append(f"report_structured_output: {type(exc).__name__}: {exc}")
                 report = fallback
-        if state["iteration_count"] >= state["max_iterations"] and not state["verification"].is_sufficient:
-            report.limitations.append("Maximum investigation attempts reached before full verification.")
+        if (
+            state["iteration_count"] >= state["max_iterations"]
+            and not state["verification"].is_sufficient
+        ):
+            report.limitations.append(
+                "Maximum investigation attempts reached before full verification."
+            )
         if not self.reasoner.enabled:
             report.limitations.append(
                 "Generated by the deterministic local reasoner because OPENAI_API_KEY is not configured."
             )
-        self.database.save_report(report)
-        self.database.update_incident_status(state["incident_id"], IncidentStatus.RESOLVED)
-        self.emit(
+        await self.database.asave_report(report)
+        await self.database.aupdate_incident_status(state["incident_id"], IncidentStatus.RESOLVED)
+        await self.emit(
             state,
             InvestigationEventType.REPORT_GENERATED,
             "report",
@@ -437,7 +449,7 @@ class InvestigationNodes:
                 "evidence_confidence_level": evidence_confidence.level,
             },
         )
-        self.emit(
+        await self.emit(
             state,
             InvestigationEventType.INVESTIGATION_COMPLETED,
             "report",
@@ -466,7 +478,9 @@ class InvestigationNodes:
     @staticmethod
     def _resolve_ids(ids: list[str], evidence: list[EvidenceItem]) -> tuple[list[str], list[str]]:
         available = {item.id for item in evidence}
-        return [item for item in ids if item in available], [item for item in ids if item not in available]
+        return [item for item in ids if item in available], [
+            item for item in ids if item not in available
+        ]
 
     @staticmethod
     def _canonical_failure_type(value: FailureType | str) -> FailureType | None:
@@ -591,7 +605,11 @@ class InvestigationNodes:
         degraded = [item for item in state["service_health"] if item.status != "healthy"]
         signals = sorted(
             {log.error_type for log in error_logs if log.error_type}
-            | ({"high payment latency"} if any(log.service == "payment-service" for log in slow_logs) else set())
+            | (
+                {"high payment latency"}
+                if any(log.service == "payment-service" for log in slow_logs)
+                else set()
+            )
             | {f"{item.service} health {item.status}" for item in degraded}
         )
         if any(log.error_type == "ProviderConfigurationError" for log in error_logs):
@@ -617,12 +635,18 @@ class InvestigationNodes:
         ids = list(dict.fromkeys(ids))
         services = sorted({item.service for item in [*error_logs, *slow_logs, *degraded]})
         if signals:
-            summary = f"Observed {len(error_logs)} failed and {len(slow_logs)} slow requests: " + "; ".join(signals)
+            summary = (
+                f"Observed {len(error_logs)} failed and {len(slow_logs)} slow requests: "
+                + "; ".join(signals)
+            )
         else:
             summary = "No material runtime anomaly is present in the collected window."
             ids = [item.evidence_id for item in state["service_health"]]
             services = [item.service for item in state["service_health"]]
-        query = " ".join([*services, dominant_category, *signals]) or "healthy checkout payment baseline"
+        query = (
+            " ".join([*services, dominant_category, *signals])
+            or "healthy checkout payment baseline"
+        )
         return RuntimeAnalysis(
             anomaly_summary=summary,
             affected_services=services,
@@ -666,7 +690,9 @@ class InvestigationNodes:
                 else "Collected health and request evidence does not support an active failure."
             ),
             supporting_evidence_ids=ids,
-            missing_evidence=[] if len(runtime_ids) >= 2 else ["Additional correlated failing requests"],
+            missing_evidence=[]
+            if len(runtime_ids) >= 2
+            else ["Additional correlated failing requests"],
         )
 
     @classmethod
@@ -698,7 +724,9 @@ class InvestigationNodes:
             is_sufficient=sufficient,
             evidence_support=evidence_support,
             supported_evidence_ids=supported,
-            unresolved_questions=[] if sufficient else ["Which additional runtime signal confirms this pattern?"],
+            unresolved_questions=[]
+            if sufficient
+            else ["Which additional runtime signal confirms this pattern?"],
         )
 
     @classmethod
@@ -755,7 +783,9 @@ class InvestigationNodes:
         )
         return RootCauseReport(
             incident_id=state["incident_id"],
-            root_cause=hypothesis.title if verified else f"Unverified hypothesis: {hypothesis.title}",
+            root_cause=hypothesis.title
+            if verified
+            else f"Unverified hypothesis: {hypothesis.title}",
             root_cause_category=category,
             affected_service=hypothesis.suspected_service,
             summary=(

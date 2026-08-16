@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     langsmith_tracing: bool = False
     langsmith_api_key: str | None = None
     langsmith_project: str = "tracelens-dev"
+    frontend_origin: str | None = None
     checkout_service_url: str = "http://127.0.0.1:8101"
     payment_service_url: str = "http://127.0.0.1:8102"
     graph_version: str = "v1"
@@ -35,16 +36,39 @@ class Settings(BaseSettings):
     def database_path(self) -> Path:
         prefix = "sqlite:///"
         if not self.database_url.startswith(prefix):
-            raise ValueError("V1 supports sqlite:/// DATABASE_URL values only")
+            raise ValueError("database_path is available only for SQLite DATABASE_URL values")
         return Path(self.database_url.removeprefix(prefix)).expanduser().resolve()
 
+    @property
+    def database_backend(self) -> str:
+        if self.database_url.startswith("sqlite:///"):
+            return "sqlite"
+        if self.database_url.startswith(("postgresql://", "postgres://")):
+            return "postgres"
+        raise ValueError("DATABASE_URL must use sqlite:/// or postgresql://")
+
+    @property
+    def embedded_incident_lab(self) -> bool:
+        return self.environment.lower() == "production"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        origins = ["http://127.0.0.1:3000", "http://localhost:3000"]
+        if self.frontend_origin:
+            origin = self.frontend_origin.rstrip("/")
+            if origin not in origins:
+                origins.append(origin)
+        return origins
+
     def ensure_directories(self) -> None:
-        for path in (
-            self.database_path.parent,
+        paths = [
             self.checkpoint_database_path.parent,
             self.runtime_directory,
             self.chroma_persist_directory,
-        ):
+        ]
+        if self.database_backend == "sqlite":
+            paths.append(self.database_path.parent)
+        for path in paths:
             path.mkdir(parents=True, exist_ok=True)
 
 
@@ -53,4 +77,3 @@ def get_settings() -> Settings:
     settings = Settings()
     settings.ensure_directories()
     return settings
-

@@ -8,15 +8,31 @@ export interface TrafficGenerationResult {
   results: Record<string, number>;
 }
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+export const API_BASE = (
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+export const BACKEND_WAKE_MESSAGE =
+  "TraceLens backend is waking up. This can take up to a minute on the demo environment. Please retry shortly.";
+
+class ApiResponseError extends Error {}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, { cache: "no-store", ...init });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(payload.detail ?? `Request failed: ${response.status}`);
+  try {
+    const response = await fetch(`${API_BASE}${path}`, { cache: "no-store", ...init });
+    if (!response.ok) {
+      if ([502, 503, 504].includes(response.status)) {
+        throw new Error(BACKEND_WAKE_MESSAGE);
+      }
+      const payload = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new ApiResponseError(payload.detail ?? `Request failed: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    if (error instanceof ApiResponseError || (error instanceof Error && error.message === BACKEND_WAKE_MESSAGE)) {
+      throw error;
+    }
+    throw new Error(BACKEND_WAKE_MESSAGE);
   }
-  return response.json();
 }
 
 export const api = {

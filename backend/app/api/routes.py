@@ -18,15 +18,16 @@ from app.api.schemas import (
     TrafficGenerationResponse,
 )
 from app.core.config import get_settings
-from app.core.database import Database
+from app.core.database import Database, get_database
 from app.domain.models import Incident, IncidentStatus, Scenario, TrafficBatch
 from app.services.investigation import load_checkpoint_state, run_investigation
+from app.services.lab_client import lab_client
 
 router = APIRouter(prefix="/api")
 
 
 def database() -> Database:
-    return Database()
+    return get_database()
 
 
 def public_incident(incident: Incident) -> IncidentPublic:
@@ -36,8 +37,8 @@ def public_incident(incident: Incident) -> IncidentPublic:
 @router.get("/overview", response_model=OverviewResponse)
 async def overview() -> OverviewResponse:
     db = database()
-    incidents = db.list_incidents()
-    evaluations = db.list_evaluations()
+    incidents = await db.alist_incidents()
+    evaluations = await db.alist_evaluations()
     latest_score = None
     if evaluations:
         item = evaluations[0]
@@ -61,18 +62,18 @@ async def overview() -> OverviewResponse:
 
 @router.get("/incidents", response_model=list[IncidentPublic])
 async def list_incidents() -> list[IncidentPublic]:
-    return [public_incident(item) for item in database().list_incidents()]
+    return [public_incident(item) for item in await database().alist_incidents()]
 
 
 @router.post("/incidents", response_model=IncidentPublic, status_code=status.HTTP_201_CREATED)
 async def create_incident(payload: IncidentCreate) -> IncidentPublic:
     db = database()
     if payload.traffic_batch_id is not None:
-        batch = db.get_traffic_batch(payload.traffic_batch_id)
+        batch = await db.aget_traffic_batch(payload.traffic_batch_id)
         if not batch:
             raise HTTPException(status_code=404, detail="Traffic batch not found")
     else:
-        batch = db.latest_traffic_batch()
+        batch = await db.alatest_traffic_batch()
     incident = Incident(
         id=f"INC-{uuid.uuid4().hex[:8].upper()}",
         **payload.model_dump(exclude={"traffic_batch_id"}),
@@ -80,13 +81,13 @@ async def create_incident(payload: IncidentCreate) -> IncidentPublic:
         observation_started_at=batch.started_at if batch else None,
         observation_ended_at=batch.ended_at if batch else None,
     )
-    db.create_incident(incident)
+    await db.acreate_incident(incident)
     return public_incident(incident)
 
 
 @router.get("/incidents/{incident_id}", response_model=IncidentPublic)
 async def get_incident(incident_id: str) -> IncidentPublic:
-    incident = database().get_incident(incident_id)
+    incident = await database().aget_incident(incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     return public_incident(incident)
@@ -97,13 +98,17 @@ async def get_incident(incident_id: str) -> IncidentPublic:
     response_model=InvestigationAccepted,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def investigate_incident(incident_id: str, background_tasks: BackgroundTasks) -> InvestigationAccepted:
+async def investigate_incident(
+    incident_id: str, background_tasks: BackgroundTasks
+) -> InvestigationAccepted:
     db = database()
-    incident = db.get_incident(incident_id)
+    incident = await db.aget_incident(incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     if incident.status == IncidentStatus.INVESTIGATING:
-        raise HTTPException(status_code=409, detail="Investigation is already running or can be resumed")
+        raise HTTPException(
+            status_code=409, detail="Investigation is already running or can be resumed"
+        )
     if incident.status == IncidentStatus.RESOLVED:
         raise HTTPException(status_code=409, detail="Incident already has a completed report")
     background_tasks.add_task(run_investigation, incident_id, database=db)
@@ -115,8 +120,10 @@ async def investigate_incident(incident_id: str, background_tasks: BackgroundTas
 
 
 @router.post("/incidents/{incident_id}/resume", response_model=InvestigationAccepted)
-async def resume_investigation(incident_id: str, background_tasks: BackgroundTasks) -> InvestigationAccepted:
-    incident = database().get_incident(incident_id)
+async def resume_investigation(
+    incident_id: str, background_tasks: BackgroundTasks
+) -> InvestigationAccepted:
+    incident = await database().aget_incident(incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     if incident.status == IncidentStatus.RESOLVED:
@@ -135,14 +142,14 @@ async def stream_events(
     request: Request,
     after: int = Query(default=0, ge=0),
 ) -> StreamingResponse:
-    if not database().get_incident(incident_id):
+    if not await database().aget_incident(incident_id):
         raise HTTPException(status_code=404, detail="Incident not found")
 
     async def event_stream() -> AsyncIterator[str]:
         cursor = after
         idle_ticks = 0
         while not await request.is_disconnected():
-            events = database().list_events(incident_id, cursor)
+            events = await database().alist_events(incident_id, cursor)
             if events:
                 idle_ticks = 0
                 for event in events:
@@ -152,7 +159,10 @@ async def stream_events(
                         f"event: {event.event_type.value}\n"
                         f"data: {event.model_dump_json()}\n\n"
                     )
-                    if event.event_type.value in {"investigation_completed", "investigation_failed"}:
+                    if event.event_type.value in {
+                        "investigation_completed",
+                        "investigation_failed",
+                    }:
                         return
             else:
                 idle_ticks += 1
@@ -169,7 +179,7 @@ async def stream_events(
 
 @router.get("/incidents/{incident_id}/report")
 async def get_report(incident_id: str):
-    report = database().get_report(incident_id)
+    report = await database().aget_report(incident_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not available")
     return report
@@ -177,7 +187,7 @@ async def get_report(incident_id: str):
 
 @router.get("/incidents/{incident_id}/evidence")
 async def get_evidence(incident_id: str):
-    if not database().get_incident(incident_id):
+    if not await database().aget_incident(incident_id):
         raise HTTPException(status_code=404, detail="Incident not found")
     state = await load_checkpoint_state(incident_id)
     return state.get("evidence", [])
@@ -219,11 +229,11 @@ async def generate_lab_traffic(count: int = Query(default=12, ge=1, le=100)):
     batch_id = f"BATCH-{uuid.uuid4().hex[:12].upper()}"
     started_at = datetime.now(UTC)
     results: dict[str, int] = {}
-    async with httpx.AsyncClient(timeout=3.0) as client:
+    async with lab_client("checkout-service", settings, timeout=3.0) as client:
         for _ in range(count):
             try:
                 response = await client.post(
-                    f"{settings.checkout_service_url}/checkout",
+                    "/checkout",
                     json={"amount_cents": 4999, "currency": "USD"},
                     headers={
                         "X-Request-ID": str(uuid.uuid4()),
@@ -235,7 +245,7 @@ async def generate_lab_traffic(count: int = Query(default=12, ge=1, le=100)):
                 key = "connection_error"
             results[key] = results.get(key, 0) + 1
     ended_at = datetime.now(UTC)
-    database().save_traffic_batch(
+    await database().asave_traffic_batch(
         TrafficBatch(
             id=batch_id,
             started_at=started_at,
@@ -257,13 +267,10 @@ async def generate_lab_traffic(count: int = Query(default=12, ge=1, le=100)):
 async def lab_health():
     settings = get_settings()
     result = []
-    async with httpx.AsyncClient(timeout=1.5) as client:
-        for service, url in (
-            ("checkout-service", settings.checkout_service_url),
-            ("payment-service", settings.payment_service_url),
-        ):
+    for service in ("checkout-service", "payment-service"):
+        async with lab_client(service, settings, timeout=1.5) as client:
             try:
-                response = await client.get(f"{url}/health")
+                response = await client.get("/health")
                 result.append({"service": service, **response.json()})
             except (httpx.RequestError, ValueError):
                 result.append({"service": service, "status": "offline"})
@@ -272,4 +279,4 @@ async def lab_health():
 
 @router.get("/evaluations")
 async def evaluations():
-    return database().list_evaluations()
+    return await database().alist_evaluations()

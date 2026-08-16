@@ -4,7 +4,7 @@ from langsmith import traceable
 
 from app.core.config import Settings, get_settings
 from app.domain.models import RetrievedDocument
-from app.rag.ingest import build_vector_store, ingest_knowledge
+from app.rag.ingest import ensure_vector_store
 from app.rag.schemas import RetrieverStrategy
 
 
@@ -12,9 +12,7 @@ def build_retriever(
     strategy: RetrieverStrategy = RetrieverStrategy.MMR, settings: Settings | None = None
 ):
     settings = settings or get_settings()
-    store = build_vector_store(settings)
-    if store._collection.count() == 0:
-        ingest_knowledge(settings)
+    store = ensure_vector_store(settings)
     return store.as_retriever(
         search_type=strategy.value,
         search_kwargs={"k": 5, "fetch_k": 10, "lambda_mult": 0.75},

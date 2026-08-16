@@ -3,20 +3,20 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import aiosqlite
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.core.config import Settings, get_settings
-from app.core.database import Database
+from app.core.database import Database, get_database
 from app.domain.models import IncidentStatus, InvestigationEvent, InvestigationEventType
 from app.graph.nodes import InvestigationNodes
 from app.graph.state import initial_state
 from app.graph.workflow import build_workflow
 
 
-@asynccontextmanager
-async def sqlite_checkpointer(settings: Settings):
-    """Open a strict checkpointer that explicitly allows only TraceLens domain records."""
+def checkpoint_serializer() -> JsonPlusSerializer:
+    """Allow only the TraceLens domain records persisted in graph state."""
     from app.domain import models
 
     allowed_types = [
@@ -39,7 +39,24 @@ async def sqlite_checkpointer(settings: Settings):
         models.RootCauseReportDraft,
         models.RootCauseReport,
     ]
-    serializer = JsonPlusSerializer(allowed_msgpack_modules=allowed_types)
+    return JsonPlusSerializer(allowed_msgpack_modules=allowed_types)
+
+
+def checkpoint_backend(settings: Settings) -> str:
+    return "postgres" if settings.database_backend == "postgres" else "sqlite"
+
+
+@asynccontextmanager
+async def investigation_checkpointer(settings: Settings):
+    serializer = checkpoint_serializer()
+    if checkpoint_backend(settings) == "postgres":
+        database_url = settings.database_url.replace("postgres://", "postgresql://", 1)
+        async with AsyncPostgresSaver.from_conn_string(
+            database_url, serde=serializer
+        ) as checkpointer:
+            await checkpointer.setup()
+            yield checkpointer
+        return
     async with aiosqlite.connect(str(settings.checkpoint_database_path)) as connection:
         yield AsyncSqliteSaver(connection, serde=serializer)
 
@@ -72,10 +89,10 @@ async def run_investigation(
     settings: Settings | None = None,
 ) -> None:
     settings = settings or get_settings()
-    database = database or Database()
+    database = database or get_database()
     config = graph_config(incident_id, settings)
     if not resume:
-        database.add_event(
+        await database.aadd_event(
             InvestigationEvent(
                 event_type=InvestigationEventType.INVESTIGATION_STARTED,
                 incident_id=incident_id,
@@ -84,16 +101,18 @@ async def run_investigation(
             )
         )
     try:
-        async with sqlite_checkpointer(settings) as checkpointer:
+        async with investigation_checkpointer(settings) as checkpointer:
             graph = build_workflow(InvestigationNodes(database, settings), checkpointer)
-            graph_input = None if resume else initial_state(
-                incident_id, settings.max_investigation_iterations
+            graph_input = (
+                None
+                if resume
+                else initial_state(incident_id, settings.max_investigation_iterations)
             )
             async for _ in graph.astream(graph_input, config=config, stream_mode="updates"):
                 pass
     except Exception as exc:
-        database.update_incident_status(incident_id, IncidentStatus.FAILED)
-        database.add_event(
+        await database.aupdate_incident_status(incident_id, IncidentStatus.FAILED)
+        await database.aadd_event(
             InvestigationEvent(
                 event_type=InvestigationEventType.INVESTIGATION_FAILED,
                 incident_id=incident_id,
@@ -110,7 +129,7 @@ async def load_checkpoint_state(
     settings: Settings | None = None,
 ) -> dict:
     settings = settings or get_settings()
-    async with sqlite_checkpointer(settings) as checkpointer:
+    async with investigation_checkpointer(settings) as checkpointer:
         graph = build_workflow(checkpointer=checkpointer)
         snapshot = await graph.aget_state(graph_config(incident_id, settings))
         return dict(snapshot.values) if snapshot.values else {}

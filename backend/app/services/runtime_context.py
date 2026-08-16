@@ -6,9 +6,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
+from incident_lab.runtime import store as runtime_store
 
 from app.core.config import Settings, get_settings
 from app.domain.models import Deployment, LogEntry, ServiceHealth
+from app.services.lab_client import lab_client
 
 
 def read_logs(
@@ -20,12 +22,25 @@ def read_logs(
     observation_ended_at: datetime | None = None,
 ) -> list[LogEntry]:
     entries: list[LogEntry] = []
-    for path in sorted(runtime_directory.glob("*-service.jsonl")):
-        service = path.stem
-        lines = path.read_text(encoding="utf-8").splitlines()[-limit:]
-        for fallback_sequence, line in enumerate(lines, start=1):
+    if runtime_store.runtime_storage_backend() == "postgres":
+        sources = [
+            (service, runtime_store.load_logs(service, limit))
+            for service in ("checkout-service", "payment-service")
+        ]
+    else:
+        sources = []
+        for path in sorted(runtime_directory.glob("*-service.jsonl")):
+            payloads = []
+            for line in path.read_text(encoding="utf-8").splitlines()[-limit:]:
+                try:
+                    payloads.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+            sources.append((path.stem, payloads))
+    for service, payloads in sources:
+        for fallback_sequence, raw_payload in enumerate(payloads, start=1):
             try:
-                payload = json.loads(line)
+                payload = dict(raw_payload)
                 sequence = payload.pop("log_sequence", fallback_sequence)
                 entry = LogEntry(evidence_id=f"log:{service}:{sequence}", **payload)
                 if traffic_batch_id is not None and entry.traffic_batch_id != traffic_batch_id:
@@ -36,39 +51,35 @@ def read_logs(
                     if observation_ended_at and entry.timestamp > observation_ended_at:
                         continue
                 entries.append(entry)
-            except (json.JSONDecodeError, ValueError, TypeError):
+            except (ValueError, TypeError):
                 continue
     return sorted(entries, key=lambda entry: entry.timestamp)[-limit:]
 
 
-def read_deployments(
-    runtime_directory: Path, *, as_of: datetime | None = None
-) -> list[Deployment]:
-    path = runtime_directory / "deployments.json"
-    if not path.exists():
-        return []
+def read_deployments(runtime_directory: Path, *, as_of: datetime | None = None) -> list[Deployment]:
+    if runtime_store.runtime_storage_backend() == "postgres":
+        payload = runtime_store.load_deployments()
+    else:
+        path = runtime_directory / "deployments.json"
+        if not path.exists():
+            return []
+        payload = json.loads(path.read_text(encoding="utf-8"))
     deployments = [
-        Deployment(
-            evidence_id=f"deployment:{item['service']}:{item['version']}", **item
-        )
-        for item in json.loads(path.read_text(encoding="utf-8"))
+        Deployment(evidence_id=f"deployment:{item['service']}:{item['version']}", **item)
+        for item in payload
     ]
     return [item for item in deployments if as_of is None or item.deployed_at <= as_of]
 
 
 async def collect_health(settings: Settings | None = None) -> list[ServiceHealth]:
     settings = settings or get_settings()
-    services = {
-        "checkout-service": settings.checkout_service_url,
-        "payment-service": settings.payment_service_url,
-    }
     results: list[ServiceHealth] = []
-    async with httpx.AsyncClient(timeout=1.5) as client:
-        for service, base_url in services.items():
+    for service in ("checkout-service", "payment-service"):
+        async with lab_client(service, settings, timeout=1.5) as client:
             started = time.perf_counter()
             checked_at = datetime.now(UTC)
             try:
-                response = await client.get(f"{base_url}/health")
+                response = await client.get("/health")
                 duration_ms = (time.perf_counter() - started) * 1000
                 payload = response.json()
                 details = ", ".join(

@@ -40,7 +40,9 @@ class LocalHashEmbeddings(Embeddings):
 def build_embeddings(settings: Settings | None = None) -> Embeddings:
     settings = settings or get_settings()
     if settings.openai_api_key:
-        return OpenAIEmbeddings(model=settings.openai_embedding_model, api_key=settings.openai_api_key)
+        return OpenAIEmbeddings(
+            model=settings.openai_embedding_model, api_key=settings.openai_api_key
+        )
     return LocalHashEmbeddings()
 
 
@@ -73,7 +75,9 @@ def split_documents(documents: Iterable[Document]) -> list[Document]:
         index = source_counts.get(source, 0)
         source_counts[source] = index + 1
         slug = Path(source).stem
-        chunk.metadata["evidence_id"] = f"{chunk.metadata.get('document_type', 'document')}:{slug}:chunk-{index + 1:02d}"
+        chunk.metadata["evidence_id"] = (
+            f"{chunk.metadata.get('document_type', 'document')}:{slug}:chunk-{index + 1:02d}"
+        )
         chunk.metadata["chunk_index"] = index
     return chunks
 
@@ -98,6 +102,16 @@ def ingest_knowledge(settings: Settings | None = None) -> int:
     store = build_vector_store(settings)
     store.add_documents(documents, ids=[doc.metadata["evidence_id"] for doc in documents])
     return len(documents)
+
+
+def ensure_vector_store(settings: Settings | None = None) -> Chroma:
+    """Return a populated collection without re-ingesting during a running process."""
+    settings = settings or get_settings()
+    store = build_vector_store(settings)
+    if store._collection.count() == 0:
+        documents = split_documents(load_documents(settings.knowledge_directory))
+        store.add_documents(documents, ids=[doc.metadata["evidence_id"] for doc in documents])
+    return store
 
 
 def main() -> None:

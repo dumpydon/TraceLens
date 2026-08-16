@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "./api";
+import { api, BACKEND_WAKE_MESSAGE } from "./api";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe("incident traffic batch handoff", () => {
   it("posts the exact generated traffic batch when creating an incident", async () => {
@@ -38,5 +41,19 @@ describe("incident traffic batch handoff", () => {
 
     const [, init] = fetchMock.mock.calls[0];
     expect(JSON.parse(init.body as string)).toEqual({});
+  });
+
+  it("shows a restrained wake-up error when the demo backend is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+
+    await expect(api.overview()).rejects.toThrow(BACKEND_WAKE_MESSAGE);
+  });
+
+  it("uses the configured production API origin without a trailing slash", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://tracelens-api.onrender.com/");
+    vi.resetModules();
+    const productionApi = await import("./api");
+
+    expect(productionApi.API_BASE).toBe("https://tracelens-api.onrender.com");
   });
 });

@@ -39,7 +39,8 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
       if (event.event_type === "investigation_completed" || event.event_type === "investigation_failed") api.incident(id).then(setIncident).catch(() => undefined);
     };
     names.forEach((name) => source.addEventListener(name, handler));
-    source.onerror = () => source.close();
+    // Native EventSource retry is important when the free demo backend is waking up.
+    source.onerror = () => undefined;
     return () => source.close();
   }, [id]);
 

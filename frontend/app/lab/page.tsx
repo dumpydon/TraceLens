@@ -18,7 +18,7 @@ export default function LabPage() {
   const [trafficBatchId, setTrafficBatchId] = useState<string | null>(null);
   const [trafficFailed, setTrafficFailed] = useState(false);
   const router = useRouter();
-  const load = useCallback(() => Promise.all([api.scenarios().then(setScenarios), api.labHealth().then(setHealth)]).catch((err) => setError(err.message)), []);
+  const load = useCallback(() => Promise.all([api.scenarios().then(setScenarios), api.labHealth().then(setHealth)]).then(() => setError("")).catch((err) => setError(err.message)), []);
   useEffect(() => { load(); const timer = setInterval(load, 5000); return () => clearInterval(timer); }, [load]);
   async function activate(name: string) { setBusy(name); setError(""); setTrafficFailed(false); try { await api.activateScenario(name); setTrafficBatchId(null); setMessage(`${name.replaceAll("_", " ")} is active.`); await load(); } catch (err) { setError((err as Error).message); } finally { setBusy(""); } }
   async function traffic() { setBusy("traffic"); setError(""); setTrafficBatchId(null); setTrafficFailed(false); try { const result = await api.generateTraffic(); setTrafficBatchId(result.traffic_batch_id); setMessage(`Generated ${result.requests} checkouts · ${Object.entries(result.results).map(([key, count]) => `${key}: ${count}`).join(" · ")}`); await load(); } catch (err) { setTrafficFailed(true); setError((err as Error).message); } finally { setBusy(""); } }
