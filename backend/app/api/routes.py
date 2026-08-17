@@ -6,11 +6,13 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import httpx
+from evaluation.run_eval import run as run_evaluation_benchmark
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from incident_lab.runtime.store import SCENARIOS, activate_scenario, clear_logs, load_scenario
 
 from app.api.schemas import (
+    EvaluationRunStatus,
     IncidentCreate,
     IncidentPublic,
     InvestigationAccepted,
@@ -24,6 +26,8 @@ from app.services.investigation import load_checkpoint_state, run_investigation
 from app.services.lab_client import lab_client
 
 router = APIRouter(prefix="/api")
+OVERVIEW_RECENT_INCIDENT_LIMIT = 10
+evaluation_run_status = EvaluationRunStatus()
 
 
 def database() -> Database:
@@ -55,7 +59,9 @@ async def overview() -> OverviewResponse:
     return OverviewResponse(
         active_incidents=sum(item.status == IncidentStatus.INVESTIGATING for item in incidents),
         resolved_incidents=sum(item.status == IncidentStatus.RESOLVED for item in incidents),
-        recent_incidents=[public_incident(item) for item in incidents[:5]],
+        recent_incidents=[
+            public_incident(item) for item in incidents[:OVERVIEW_RECENT_INCIDENT_LIMIT]
+        ],
         latest_evaluation_score=latest_score,
     )
 
@@ -280,3 +286,35 @@ async def lab_health():
 @router.get("/evaluations")
 async def evaluations():
     return await database().alist_evaluations()
+
+
+async def execute_evaluation_run() -> None:
+    try:
+        summary = await run_evaluation_benchmark()
+        evaluation_run_status.status = "completed"
+        evaluation_run_status.run_id = summary.id
+        evaluation_run_status.error = None
+    except Exception as exc:  # noqa: BLE001 - background job must expose a terminal state
+        evaluation_run_status.status = "failed"
+        evaluation_run_status.run_id = None
+        evaluation_run_status.error = f"{type(exc).__name__}: {exc}"
+
+
+@router.post(
+    "/evaluations/run",
+    response_model=EvaluationRunStatus,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def run_evaluation(background_tasks: BackgroundTasks) -> EvaluationRunStatus:
+    if evaluation_run_status.status == "running":
+        raise HTTPException(status_code=409, detail="An evaluation run is already in progress")
+    evaluation_run_status.status = "running"
+    evaluation_run_status.run_id = None
+    evaluation_run_status.error = None
+    background_tasks.add_task(execute_evaluation_run)
+    return evaluation_run_status.model_copy(deep=True)
+
+
+@router.get("/evaluations/status", response_model=EvaluationRunStatus)
+async def evaluation_status() -> EvaluationRunStatus:
+    return evaluation_run_status.model_copy(deep=True)

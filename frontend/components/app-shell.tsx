@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Activity, Beaker, ChartNoAxesCombined, CircleGauge, ListTree } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Activity, ArrowRight, Beaker, ChartNoAxesCombined, ChevronsLeft, CircleGauge, Info, ListTree } from "lucide-react";
+import { shouldShowRuntimeBriefing } from "@/lib/backend-runtime";
+import { BackendStartupPanel } from "@/components/backend-startup-panel";
+import { useBackendRuntime } from "@/components/backend-runtime-provider";
+import { SystemBriefing } from "@/components/system-briefing";
 
 const navigation = [
   { href: "/", label: "Overview", icon: CircleGauge },
@@ -13,7 +17,26 @@ const navigation = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const runtime = useBackendRuntime();
   const current = navigation.find((item) => item.href === "/" ? pathname === "/" : pathname.startsWith(item.href));
+  const currentLabel = pathname === "/about" ? "System Briefing" : current?.label ?? "Incident";
+  const showBriefing = shouldShowRuntimeBriefing(runtime.status, pathname);
+  const showStartupPanel = runtime.status !== "ready" || runtime.showReadyNotice;
+  const runtimeLabel = runtime.status === "ready"
+    ? "Investigation runtime connected"
+    : runtime.status === "long_wait"
+      ? "Investigation runtime unavailable"
+      : runtime.status === "checking"
+        ? "Checking investigation runtime"
+      : "Investigation runtime initializing";
+  const handleBriefingBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push("/");
+  };
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Primary navigation">
@@ -32,18 +55,51 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <div className="sidebar-foot"><i className="status-dot" /><span>Local environment</span></div>
+        <div className={`sidebar-foot runtime-${runtime.status}`}>
+          <i className="status-dot" />
+          <span>{runtime.isLocal ? "Local environment" : "Hosted demo"}</span>
+        </div>
       </aside>
       <main className="main">
         <header className="topbar">
-          <div className="breadcrumb">TraceLens / {current?.label ?? "Incident"}</div>
-          <div className="env-chip mono">DEV</div>
+          <div className="topbar-left">
+            <div className="breadcrumb">TraceLens / {currentLabel}</div>
+            {pathname !== "/about" && (
+              <Link className="briefing-entry" href="/about">
+                <Info className="briefing-entry-info" size={15} />
+                <span className="briefing-entry-label briefing-entry-label-full">How TraceLens works</span>
+                <span className="briefing-entry-label briefing-entry-label-compact">How it works</span>
+                <ArrowRight className="briefing-entry-arrow" size={13} />
+              </Link>
+            )}
+          </div>
+          <div className="env-chip mono">{runtime.isLocal ? "DEV" : "DEMO"}</div>
         </header>
-        <div className="content">{children}</div>
+        {pathname === "/about" && (
+          <div className="about-back-row">
+            <button type="button" className="briefing-back" onClick={handleBriefingBack}>
+              <ChevronsLeft size={20} aria-hidden="true" />
+              <span>Back</span>
+            </button>
+          </div>
+        )}
+        <div className="content">
+          {showStartupPanel && (
+            <BackendStartupPanel
+              status={runtime.status}
+              isLocal={runtime.isLocal}
+              onRetry={runtime.retry}
+            />
+          )}
+          {showBriefing ? <SystemBriefing /> : children}
+        </div>
         <footer className="workspace-footer">
-          <span className="workspace-status mono">
+          <span className={`workspace-status mono runtime-${runtime.status}`}>
             <i className="workspace-status-dot" />
-            All systems operational
+            <span className="workspace-status-copy">
+              <span>{runtimeLabel}</span>
+              {runtime.status === "ready" && <small>Render&apos;s Backend API</small>}
+            </span>
           </span>
           <nav className="workspace-footer-links" aria-label="Legal">
             <button type="button">Privacy policy</button>

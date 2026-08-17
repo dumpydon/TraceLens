@@ -261,6 +261,25 @@ class Scenario(BaseModel):
     expected_behavior: str
 
 
+class EvaluationCaseResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_name: str
+    expected_root_cause_category: str
+    predicted_root_cause_category: str
+    expected_affected_service: str
+    predicted_affected_service: str
+    expected_evidence: list[str] = Field(default_factory=list)
+    retrieved_failure_types: list[str] = Field(default_factory=list)
+    retrieved_evidence_ids: list[str] = Field(default_factory=list)
+    citation_ids: list[str] = Field(default_factory=list)
+    available_evidence_ids: list[str] = Field(default_factory=list)
+    root_cause_correctness: float
+    affected_service_correctness: float
+    retrieval_relevance: float
+    evidence_groundedness: float
+
+
 class EvaluationSummary(BaseModel):
     id: str
     created_at: datetime = Field(default_factory=utc_now)
@@ -269,3 +288,4 @@ class EvaluationSummary(BaseModel):
     affected_service_correctness: float
     retrieval_relevance: float
     evidence_groundedness: float
+    case_results: list[EvaluationCaseResult] = Field(default_factory=list)

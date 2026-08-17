@@ -66,6 +66,14 @@ export interface Scenario {
   active: boolean;
 }
 
+export interface ServiceHealth {
+  service: string;
+  status: string;
+  deployment_version?: string;
+  provider_configured?: boolean;
+  available_connections?: number;
+}
+
 export interface Evaluation {
   id: string;
   created_at: string;
@@ -74,4 +82,28 @@ export interface Evaluation {
   affected_service_correctness: number;
   retrieval_relevance: number;
   evidence_groundedness: number;
+  case_results: EvaluationCaseResult[];
+}
+
+export interface EvaluationCaseResult {
+  case_name: string;
+  expected_root_cause_category: string;
+  predicted_root_cause_category: string;
+  expected_affected_service: string;
+  predicted_affected_service: string;
+  expected_evidence: string[];
+  retrieved_failure_types: string[];
+  retrieved_evidence_ids: string[];
+  citation_ids: string[];
+  available_evidence_ids: string[];
+  root_cause_correctness: number;
+  affected_service_correctness: number;
+  retrieval_relevance: number;
+  evidence_groundedness: number;
+}
+
+export interface EvaluationRunStatus {
+  status: "idle" | "running" | "completed" | "failed";
+  run_id: string | null;
+  error: string | null;
 }

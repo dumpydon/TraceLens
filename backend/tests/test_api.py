@@ -3,7 +3,7 @@ from datetime import timedelta
 from fastapi.testclient import TestClient
 
 from app.api import routes
-from app.domain.models import TrafficBatch, utc_now
+from app.domain.models import Incident, Severity, TrafficBatch, utc_now
 from app.main import app
 
 
@@ -20,9 +20,75 @@ def test_incident_endpoints_use_typed_public_schema(database, monkeypatch):
         assert listed.json()[0]["id"] == payload["id"]
 
 
+def test_incident_creation_persists_observable_presentation_without_scenario_label(
+    database, monkeypatch
+):
+    monkeypatch.setattr(routes, "database", lambda: database)
+    title = "Checkout timeouts with delayed payment responses"
+    summary = (
+        "Repeated checkout 504s observed while matching payment requests complete beyond "
+        "the checkout timeout budget."
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/incidents",
+            json={"title": title, "summary": summary},
+        )
+
+    assert response.status_code == 201
+    incident = database.get_incident(response.json()["id"])
+    assert incident.title == title
+    assert incident.summary == summary
+    assert incident.scenario_label is None
+
+
+def test_historical_generic_incident_title_remains_compatible(database, monkeypatch):
+    incident = Incident(
+        id="INC-LEGACY-TITLE",
+        title="Checkout reliability degradation",
+        summary="Elevated checkout failures observed in the Incident Lab.",
+        service="checkout-service",
+        severity=Severity.HIGH,
+    )
+    database.create_incident(incident)
+    monkeypatch.setattr(routes, "database", lambda: database)
+
+    with TestClient(app) as client:
+        response = client.get(f"/api/incidents/{incident.id}")
+
+    assert response.status_code == 200
+    assert response.json()["title"] == incident.title
+    assert response.json()["summary"] == incident.summary
+
+
 def test_health_endpoint():
     with TestClient(app) as client:
         assert client.get("/health").json()["status"] == "healthy"
+
+
+def test_overview_returns_ten_newest_incidents_in_order(database, monkeypatch):
+    now = utc_now()
+    for index in range(12):
+        database.create_incident(
+            Incident(
+                id=f"INC-{index:02d}",
+                title=f"Incident {index}",
+                service="checkout-service",
+                severity=Severity.HIGH,
+                started_at=now + timedelta(minutes=index),
+            )
+        )
+    monkeypatch.setattr(routes, "database", lambda: database)
+
+    with TestClient(app) as client:
+        response = client.get("/api/overview")
+
+    recent = response.json()["recent_incidents"]
+    assert response.status_code == 200
+    assert len(recent) == 10
+    assert recent[0]["id"] == "INC-11"
+    assert recent[-1]["id"] == "INC-02"
 
 
 def test_incident_binds_to_latest_completed_traffic_batch(database, monkeypatch):

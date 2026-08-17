@@ -468,11 +468,9 @@ class InvestigationNodes:
             return {}
         return {
             "id": incident.id,
-            "title": incident.title,
             "service": incident.service,
             "severity": incident.severity,
             "started_at": incident.started_at,
-            "summary": incident.summary,
         }
 
     @staticmethod

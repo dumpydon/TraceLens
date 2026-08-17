@@ -34,6 +34,26 @@ def test_maximum_iteration_forces_bounded_report():
     assert route_after_verification(state) == "generate_report"
 
 
+def test_reasoning_payload_excludes_incident_presentation_and_control_metadata():
+    state = initial_state("INC-PRESENTED")
+    state["incident"] = Incident(
+        id="INC-PRESENTED",
+        title="Checkout timeouts with delayed payment responses",
+        summary="Repeated checkout 504s observed with delayed payment responses.",
+        service="checkout-service",
+        severity="high",
+        scenario_label="payment_latency",
+    )
+
+    payload = InvestigationNodes._safe_incident(state)
+
+    assert payload["id"] == "INC-PRESENTED"
+    assert payload["service"] == "checkout-service"
+    assert "title" not in payload
+    assert "summary" not in payload
+    assert "scenario_label" not in payload
+
+
 async def test_maximum_iteration_generates_safe_terminal_report(settings, database):
     incident = Incident(
         id="INC-MAX-ITERATIONS",

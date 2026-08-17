@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -42,3 +43,9 @@ class OverviewResponse(BaseModel):
     resolved_incidents: int
     recent_incidents: list[IncidentPublic]
     latest_evaluation_score: float | None
+
+
+class EvaluationRunStatus(BaseModel):
+    status: Literal["idle", "running", "completed", "failed"] = "idle"
+    run_id: str | None = None
+    error: str | None = None
