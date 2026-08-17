@@ -43,6 +43,31 @@ describe("incident traffic batch handoff", () => {
     expect(JSON.parse(init.body as string)).toEqual({});
   });
 
+  it("sends observable presentation copy without scenario control metadata", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "INC-PRESENTED" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.createIncident("BATCH-PRESENTED", {
+      title: "Checkout timeouts with delayed payment responses",
+      summary:
+        "Repeated checkout 504s observed while matching payment requests complete beyond the checkout timeout budget.",
+    });
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init.body as string);
+    expect(body).toEqual({
+      traffic_batch_id: "BATCH-PRESENTED",
+      title: "Checkout timeouts with delayed payment responses",
+      summary:
+        "Repeated checkout 504s observed while matching payment requests complete beyond the checkout timeout budget.",
+    });
+    expect(body).not.toHaveProperty("scenario");
+    expect(body).not.toHaveProperty("scenario_label");
+  });
+
   it("shows a restrained wake-up error when the demo backend is unavailable", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
 
@@ -55,5 +80,20 @@ describe("incident traffic batch handoff", () => {
     const productionApi = await import("./api");
 
     expect(productionApi.API_BASE).toBe("https://tracelens-api.onrender.com");
+  });
+
+  it("launches evaluation only through the explicit benchmark endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "running", run_id: null, error: null }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.runEvaluation();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/evaluations/run"),
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });
