@@ -23,7 +23,7 @@ export default function OverviewPage() {
   const [error, setError] = useState("");
   useEffect(() => { api.overview().then(setData).catch((err) => setError(err.message)); }, []);
   return (
-    <>
+    <div className="overview-page">
       <div className="page-head"><div><div className="eyebrow">Operational workspace</div><h1>Investigation overview</h1><p className="subtle">Current incident workload and evidence-backed investigation outcomes.</p></div><Link className="button" href="/lab"><FlaskConical size={14} /> Open Incident Lab</Link></div>
       {error && <div className="error-box">Backend unavailable: {error}</div>}
       {!data && !error && <div className="loading-line" />}
@@ -38,6 +38,6 @@ export default function OverviewPage() {
         <TraceConvergence />
         <TechnologyStrip className="overview-technology-line" technologies={OVERVIEW_TECHNOLOGIES} />
       </>}
-    </>
+    </div>
   );
 }

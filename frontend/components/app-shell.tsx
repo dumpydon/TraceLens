@@ -83,7 +83,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         )}
-        <div className="content">
+        <div className={`content${pathname === "/" && !showBriefing ? " overview-content" : ""}`}>
           {showStartupPanel && (
             <BackendStartupPanel
               status={runtime.status}

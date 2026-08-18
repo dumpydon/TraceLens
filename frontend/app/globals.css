@@ -109,6 +109,8 @@ code, .mono { font-family: var(--font-mono), ui-monospace, monospace; }
 .env-chip { border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; color: var(--text-tertiary); font-size: 11px; }
 .topbar > .env-chip { flex: 0 0 auto; }
 .content { width: 100%; padding: 28px; max-width: 1500px; margin: 0 auto; flex: 1; }
+.content.overview-content { display: flex; flex-direction: column; padding-bottom: 18px; }
+.overview-page { flex: 1 0 auto; min-height: 100%; display: flex; flex-direction: column; }
 .workspace-footer {
   width: 100%; max-width: 1500px; margin: 0 auto; padding: 18px 28px 22px;
   border-top: 1px solid rgba(77, 120, 149, .16); display: flex; align-items: center;
@@ -696,7 +698,7 @@ h3 { font-size: 13px; margin: 0; font-weight: 620; }
 }
 .briefing-technology-line span:not(:last-child)::after { content: "·"; margin-left: clamp(8px, .8vw, 14px); color: #526b7d; text-shadow: 0 0 8px rgba(79, 184, 255, .3); }
 .briefing-technology-line span:hover { color: #d0efff; animation: briefing-technology-glow 1.25s ease-in-out infinite alternate; }
-.overview-technology-line { margin-bottom: -28px; transform: translateY(80px); }
+.overview-page .overview-technology-line { margin: auto 0 0; transform: none; }
 @keyframes briefing-technology-glow {
   from { transform: translateY(0); text-shadow: 0 0 9px rgba(79, 184, 255, .78), 0 0 21px rgba(79, 184, 255, .44); }
   to { transform: translateY(-2px); text-shadow: 0 0 13px rgba(116, 207, 255, .98), 0 0 29px rgba(79, 184, 255, .68); }
@@ -929,7 +931,6 @@ h3 { font-size: 13px; margin: 0; font-weight: 620; }
   .briefing-product-cta { align-items: stretch; flex-direction: column; }
   .briefing-product-actions { align-items: stretch; flex-direction: column; }
   .briefing-product-actions .button { width: 100%; }
-  .overview-technology-line { margin-bottom: -72px; transform: translateY(80px); }
   .event { grid-template-columns: 62px 14px minmax(0, 1fr); }
   .trace-visual { opacity: .58; margin-top: 8px; }
   .trace-visual--convergence { height: 170px; }
