@@ -207,23 +207,32 @@ export function SystemBriefingContent({
                 <span className="mono">Vercel</span>
                 <strong>Next.js interface</strong>
               </div>
-              <div className="hosted-dag-link mono"><ArrowDown size={12} aria-hidden="true" /><span>REST + SSE</span></div>
+              <div className="hosted-dag-link mono">
+                <ArrowDown size={12} aria-hidden="true" />
+                <span>REST + SSE</span>
+                <i className="hosted-flow-particle hosted-flow-particle--down" aria-hidden="true" />
+              </div>
               <div className="hosted-node hosted-backend hosted-dag-root">
                 <span className="mono">Render</span>
                 <strong>FastAPI · LangGraph · Incident Lab</strong>
               </div>
-              <div className="hosted-dag-fanout" aria-hidden="true" />
+              <div className="hosted-dag-fanout" aria-hidden="true">
+                <i className="hosted-flow-particle hosted-flow-particle--fanout" />
+              </div>
               <div className="hosted-dag-branches" aria-label="Render service dependencies">
                 <div className="hosted-dag-branch">
                   <span className="hosted-dag-edge-label mono">Models / embeddings</span>
+                  <i className="hosted-flow-particle hosted-flow-particle--branch" aria-hidden="true" />
                   <div className="hosted-node"><span className="mono">OpenAI</span><strong>Models</strong></div>
                 </div>
                 <div className="hosted-dag-branch">
                   <span className="hosted-dag-edge-label mono">Tracing</span>
+                  <i className="hosted-flow-particle hosted-flow-particle--branch" aria-hidden="true" />
                   <div className="hosted-node"><span className="mono">LangSmith</span><strong>Tracing</strong></div>
                 </div>
                 <div className="hosted-dag-branch">
                   <span className="hosted-dag-edge-label mono">Persistent state</span>
+                  <i className="hosted-flow-particle hosted-flow-particle--branch" aria-hidden="true" />
                   <div className="hosted-node hosted-database"><span className="mono">Supabase PostgreSQL</span><strong>Incidents · checkpoints · runtime state</strong></div>
                 </div>
               </div>

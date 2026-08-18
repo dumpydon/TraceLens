@@ -192,8 +192,12 @@ export default function LabPage() {
               {createdIncident ? (
                 <>
                   <span><CheckCircle2 size={14} /> Investigation created</span>
-                  <Link className="button small" href={`/incidents/${createdIncident.id}`}>
-                    Open investigation <ArrowRight size={13} />
+                  <Link
+                    className="button lab-open-investigation"
+                    href={`/incidents/${createdIncident.id}`}
+                    aria-label="Open investigation"
+                  >
+                    Open Investigation <ArrowRight size={17} aria-hidden="true" />
                   </Link>
                 </>
               ) : (

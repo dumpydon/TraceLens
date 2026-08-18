@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { BackendStartupPanel } from "./backend-startup-panel";
+import { describe, expect, it, vi } from "vitest";
+import { BackendStartupPanel, refreshPage } from "./backend-startup-panel";
 import { SystemBriefingContent } from "./system-briefing";
 
 describe("SystemBriefing", () => {
@@ -82,11 +82,28 @@ describe("BackendStartupPanel", () => {
     expect(waking).toContain("Usually ready within 1–2 minutes");
     expect(waking).not.toContain("countdown");
 
-    const longWait = renderToStaticMarkup(
-      <BackendStartupPanel status="long_wait" isLocal={false} onRetry={() => undefined} />,
-    );
-    expect(longWait).toContain("taking longer than expected");
-    expect(longWait).toContain("Retry connection");
+    const longWait = renderToStaticMarkup(<BackendStartupPanel status="long_wait" isLocal={false} />);
+    expect(longWait).toContain("Taking longer than expected");
+    expect(longWait).toContain("hosted backend is still starting");
+    expect(longWait).toContain("TraceLens will keep trying automatically");
+    expect(longWait).toContain("If the page appears stuck, you can refresh and reconnect.");
+    expect(longWait).toContain("Refresh page");
+    expect(waking).not.toContain("Refresh page");
+
+    const ready = renderToStaticMarkup(<BackendStartupPanel status="ready" isLocal={false} />);
+    expect(ready).not.toContain("Refresh page");
+  });
+
+  it("uses local long-wait copy without hosted-backend language", () => {
+    const html = renderToStaticMarkup(<BackendStartupPanel status="long_wait" isLocal />);
+    expect(html).toContain("The local backend is still unavailable.");
+    expect(html).not.toContain("hosted backend");
+  });
+
+  it("invokes the refresh action exactly once when requested", () => {
+    const reload = vi.fn();
+    refreshPage(reload);
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it("does not describe a missing localhost API as a hosted cold start", () => {

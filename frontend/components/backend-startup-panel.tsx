@@ -6,16 +6,20 @@ import { ActivityRail } from "./activity-rail";
 interface BackendStartupPanelProps {
   status: BackendRuntimeStatus;
   isLocal: boolean;
-  onRetry?: () => void;
 }
 
-export function BackendStartupPanel({ status, isLocal, onRetry }: BackendStartupPanelProps) {
+/** The fallback is intentionally user-triggered; automatic runtime polling remains primary. */
+export function refreshPage(reload: () => void = () => window.location.reload()): void {
+  reload();
+}
+
+export function BackendStartupPanel({ status, isLocal }: BackendStartupPanelProps) {
   const ready = status === "ready";
   const longWait = status === "long_wait";
   const title = ready
     ? "Investigation runtime ready"
     : longWait
-      ? "Investigation runtime is taking longer than expected"
+      ? "Taking longer than expected"
       : status === "checking"
         ? "Connecting to the investigation runtime"
         : isLocal
@@ -24,6 +28,10 @@ export function BackendStartupPanel({ status, isLocal, onRetry }: BackendStartup
 
   const body = ready
     ? "Backend connected. Live incident data and investigations are available."
+    : longWait
+      ? isLocal
+        ? "The local backend is still unavailable."
+        : "The hosted backend is still starting. TraceLens will keep trying automatically."
     : status === "checking"
       ? "TraceLens is checking the configured backend health endpoint before loading live incident data."
     : isLocal
@@ -45,13 +53,13 @@ export function BackendStartupPanel({ status, isLocal, onRetry }: BackendStartup
           )}
           {longWait && (
             <p className="backend-startup-secondary">
-              The demo backend is taking longer than expected.
+              If the page appears stuck, you can refresh and reconnect.
             </p>
           )}
         </div>
         {longWait ? (
-          <button className="button" type="button" onClick={onRetry}>
-            <RotateCw size={14} /> Retry connection
+          <button className="button small" type="button" onClick={() => refreshPage()}>
+            <RotateCw size={14} aria-hidden="true" /> Refresh page
           </button>
         ) : !ready ? (
           <Link className="button small" href="/about">

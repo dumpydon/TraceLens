@@ -88,7 +88,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <BackendStartupPanel
               status={runtime.status}
               isLocal={runtime.isLocal}
-              onRetry={runtime.retry}
             />
           )}
           {showBriefing ? <SystemBriefing /> : children}
