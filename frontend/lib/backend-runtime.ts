@@ -63,8 +63,9 @@ export class BackendRuntimeMonitor {
     private readonly pollIntervalMs = BACKEND_POLL_INTERVAL_MS,
     private readonly longWaitMs = BACKEND_LONG_WAIT_MS,
     private readonly now: () => number = Date.now,
-    private readonly schedule: Schedule = setTimeout,
-    private readonly cancel: Cancel = clearTimeout,
+    // Keep browser timer methods invoked with a valid global receiver.
+    private readonly schedule: Schedule = (callback, delay) => globalThis.setTimeout(callback, delay),
+    private readonly cancel: Cancel = (timer) => globalThis.clearTimeout(timer),
   ) {}
 
   getSnapshot = (): BackendRuntimeSnapshot => this.snapshot;
@@ -188,6 +189,12 @@ export function shouldShowRuntimeBriefing(
   return pathname !== "/about" && status !== "ready";
 }
 
+export function normalizePathname(pathname: string | null | undefined): string {
+  const path = (pathname ?? "").split(/[?#]/, 1)[0];
+  if (!path || path === "/") return "/";
+  return path.replace(/\/+$/, "") || "/";
+}
+
 export function shouldRedirectToLabAfterColdStart({
   pathname,
   isLocal,
@@ -204,7 +211,7 @@ export function shouldRedirectToLabAfterColdStart({
   handledRecoveryId: number;
 }): boolean {
   return (
-    pathname === "/" &&
+    normalizePathname(pathname) === "/" &&
     !isLocal &&
     status === "ready" &&
     !showReadyNotice &&

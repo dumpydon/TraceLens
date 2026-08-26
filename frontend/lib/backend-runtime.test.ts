@@ -3,6 +3,7 @@ import {
   BACKEND_HEALTH_TIMEOUT_MS,
   BackendRuntimeMonitor,
   isLocalApiBase,
+  normalizePathname,
   probeBackendHealth,
   shouldRedirectToLabAfterColdStart,
   shouldShowRuntimeBriefing,
@@ -188,7 +189,7 @@ describe("backend runtime presentation rules", () => {
     expect(shouldShowRuntimeBriefing("waking", "/about")).toBe(false);
   });
 
-  it("redirects a hosted root route after a waking-to-ready recovery", () => {
+  it("redirects the production root pathname after a waking-to-ready recovery", () => {
     expect(shouldRedirectToLabAfterColdStart({
       pathname: "/",
       isLocal: false,
@@ -197,6 +198,31 @@ describe("backend runtime presentation rules", () => {
       recoveryId: 1,
       handledRecoveryId: 0,
     })).toBe(true);
+  });
+
+  it("normalizes equivalent root forms without matching route aliases", () => {
+    expect(normalizePathname("/")).toBe("/");
+    expect(normalizePathname("")).toBe("/");
+    expect(normalizePathname(null)).toBe("/");
+    expect(normalizePathname("///")).toBe("/");
+    expect(normalizePathname("/lab/")).toBe("/lab");
+    expect(normalizePathname("/overview")).toBe("/overview");
+    expect(shouldRedirectToLabAfterColdStart({
+      pathname: "/?source=vercel",
+      isLocal: false,
+      status: "ready",
+      showReadyNotice: false,
+      recoveryId: 1,
+      handledRecoveryId: 0,
+    })).toBe(true);
+    expect(shouldRedirectToLabAfterColdStart({
+      pathname: "/overview",
+      isLocal: false,
+      status: "ready",
+      showReadyNotice: false,
+      recoveryId: 1,
+      handledRecoveryId: 0,
+    })).toBe(false);
   });
 
   it("does not redirect an initially ready or already handled session", () => {
