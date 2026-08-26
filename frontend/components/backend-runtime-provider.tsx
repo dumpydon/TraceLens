@@ -11,6 +11,7 @@ interface BackendRuntimeContextValue {
   status: BackendRuntimeStatus;
   isLocal: boolean;
   showReadyNotice: boolean;
+  coldStartRecoveryId: number;
   retry: () => void;
 }
 
@@ -22,7 +23,10 @@ export function BackendRuntimeProvider({ children }: { children: React.ReactNode
 
   const [status, setStatus] = useState<BackendRuntimeStatus>("checking");
   const [showReadyNotice, setShowReadyNotice] = useState(false);
+  const [coldStartRecoveryId, setColdStartRecoveryId] = useState(0);
   const previousStatus = useRef<BackendRuntimeStatus>("checking");
+  const experiencedColdStart = useRef(false);
+  const emittedColdStartRecovery = useRef(false);
 
   useEffect(() => {
     const monitor = monitorRef.current!;
@@ -30,7 +34,15 @@ export function BackendRuntimeProvider({ children }: { children: React.ReactNode
       const wasUnavailable = ["waking", "long_wait"].includes(previousStatus.current);
       previousStatus.current = snapshot.status;
       setStatus(snapshot.status);
-      if (snapshot.status === "ready" && wasUnavailable) setShowReadyNotice(true);
+      if (["waking", "long_wait"].includes(snapshot.status)) experiencedColdStart.current = true;
+      if (snapshot.status === "ready" && (wasUnavailable || experiencedColdStart.current)) {
+        experiencedColdStart.current = false;
+        setShowReadyNotice(true);
+        if (!emittedColdStartRecovery.current) {
+          emittedColdStartRecovery.current = true;
+          setColdStartRecoveryId((current) => current + 1);
+        }
+      }
     });
     monitor.start();
     return () => {
@@ -51,6 +63,7 @@ export function BackendRuntimeProvider({ children }: { children: React.ReactNode
         status,
         isLocal: isLocalApiBase(),
         showReadyNotice,
+        coldStartRecoveryId,
         retry: () => monitorRef.current?.retry(),
       }}
     >

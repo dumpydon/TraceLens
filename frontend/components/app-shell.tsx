@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { Activity, ArrowRight, Beaker, ChartNoAxesCombined, ChevronsLeft, CircleGauge, Info, ListTree } from "lucide-react";
-import { shouldShowRuntimeBriefing } from "@/lib/backend-runtime";
+import { shouldRedirectToLabAfterColdStart, shouldShowRuntimeBriefing } from "@/lib/backend-runtime";
 import { BackendStartupPanel } from "@/components/backend-startup-panel";
 import { useBackendRuntime } from "@/components/backend-runtime-provider";
 import { SystemBriefing } from "@/components/system-briefing";
@@ -19,10 +20,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const runtime = useBackendRuntime();
+  const coldStartRecoveryHandled = useRef(0);
   const current = navigation.find((item) => item.href === "/" ? pathname === "/" : pathname.startsWith(item.href));
   const currentLabel = pathname === "/about" ? "System Briefing" : current?.label ?? "Incident";
   const showBriefing = shouldShowRuntimeBriefing(runtime.status, pathname);
   const showStartupPanel = runtime.status !== "ready" || runtime.showReadyNotice;
+  useEffect(() => {
+    if (
+      shouldRedirectToLabAfterColdStart({
+        pathname,
+        isLocal: runtime.isLocal,
+        status: runtime.status,
+        showReadyNotice: runtime.showReadyNotice,
+        recoveryId: runtime.coldStartRecoveryId,
+        handledRecoveryId: coldStartRecoveryHandled.current,
+      })
+    ) {
+      coldStartRecoveryHandled.current = runtime.coldStartRecoveryId;
+      router.replace("/lab");
+      return;
+    }
+
+    if (
+      runtime.status === "ready" &&
+      !runtime.showReadyNotice &&
+      runtime.coldStartRecoveryId > coldStartRecoveryHandled.current
+    ) {
+      coldStartRecoveryHandled.current = runtime.coldStartRecoveryId;
+    }
+  }, [pathname, router, runtime.coldStartRecoveryId, runtime.isLocal, runtime.showReadyNotice, runtime.status]);
   const runtimeLabel = runtime.status === "ready"
     ? "Investigation runtime connected"
     : runtime.status === "long_wait"

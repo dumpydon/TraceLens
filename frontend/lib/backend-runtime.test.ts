@@ -4,6 +4,7 @@ import {
   BackendRuntimeMonitor,
   isLocalApiBase,
   probeBackendHealth,
+  shouldRedirectToLabAfterColdStart,
   shouldShowRuntimeBriefing,
 } from "./backend-runtime";
 
@@ -185,5 +186,67 @@ describe("backend runtime presentation rules", () => {
     expect(shouldShowRuntimeBriefing("ready", "/")).toBe(false);
     expect(shouldShowRuntimeBriefing("ready", "/incidents")).toBe(false);
     expect(shouldShowRuntimeBriefing("waking", "/about")).toBe(false);
+  });
+
+  it("redirects a hosted root route after a waking-to-ready recovery", () => {
+    expect(shouldRedirectToLabAfterColdStart({
+      pathname: "/",
+      isLocal: false,
+      status: "ready",
+      showReadyNotice: false,
+      recoveryId: 1,
+      handledRecoveryId: 0,
+    })).toBe(true);
+  });
+
+  it("does not redirect an initially ready or already handled session", () => {
+    expect(shouldRedirectToLabAfterColdStart({
+      pathname: "/",
+      isLocal: false,
+      status: "ready",
+      showReadyNotice: false,
+      recoveryId: 0,
+      handledRecoveryId: 0,
+    })).toBe(false);
+    expect(shouldRedirectToLabAfterColdStart({
+      pathname: "/",
+      isLocal: false,
+      status: "ready",
+      showReadyNotice: false,
+      recoveryId: 1,
+      handledRecoveryId: 1,
+    })).toBe(false);
+  });
+
+  it("waits until the existing ready notice has finished", () => {
+    expect(shouldRedirectToLabAfterColdStart({
+      pathname: "/",
+      isLocal: false,
+      status: "ready",
+      showReadyNotice: true,
+      recoveryId: 1,
+      handledRecoveryId: 0,
+    })).toBe(false);
+  });
+
+  it("preserves deep links, about, and localhost sessions", () => {
+    for (const pathname of ["/evaluations", "/incidents/INC-123", "/about"]) {
+      expect(shouldRedirectToLabAfterColdStart({
+        pathname,
+        isLocal: false,
+        status: "ready",
+        showReadyNotice: false,
+        recoveryId: 1,
+        handledRecoveryId: 0,
+      })).toBe(false);
+    }
+    expect(shouldRedirectToLabAfterColdStart({
+      pathname: "/",
+      isLocal: true,
+      status: "ready",
+      showReadyNotice: false,
+      recoveryId: 1,
+      handledRecoveryId: 0,
+    })).toBe(false);
   });
 });

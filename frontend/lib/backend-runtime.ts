@@ -187,3 +187,28 @@ export function shouldShowRuntimeBriefing(
 ): boolean {
   return pathname !== "/about" && status !== "ready";
 }
+
+export function shouldRedirectToLabAfterColdStart({
+  pathname,
+  isLocal,
+  status,
+  showReadyNotice,
+  recoveryId,
+  handledRecoveryId,
+}: {
+  pathname: string;
+  isLocal: boolean;
+  status: BackendRuntimeStatus;
+  showReadyNotice: boolean;
+  recoveryId: number;
+  handledRecoveryId: number;
+}): boolean {
+  return (
+    pathname === "/" &&
+    !isLocal &&
+    status === "ready" &&
+    !showReadyNotice &&
+    recoveryId > 0 &&
+    recoveryId > handledRecoveryId
+  );
+}
