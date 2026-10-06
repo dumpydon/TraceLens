@@ -11,6 +11,7 @@ from incident_lab.runtime.store import (
     ensure_runtime,
 )
 
+from app.api.maintenance import router as maintenance_router
 from app.api.routes import router
 from app.core.config import Settings, get_settings
 from app.core.database import get_database
@@ -50,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     application.include_router(router)
+    application.include_router(maintenance_router)
     application.mount("/_internal/lab/checkout", checkout_app)
     application.mount("/_internal/lab/payment", payment_app)
 

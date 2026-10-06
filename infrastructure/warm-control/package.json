@@ -1,0 +1,20 @@
+{
+  "name": "tracelens-warm-control",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dry-run": "wrangler deploy --dry-run --outdir dist",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "5.0.3",
+    "wrangler": "4.147.0"
+  },
+  "overrides": {
+    "sharp": "0.35.5"
+  }
+}

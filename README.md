@@ -236,6 +236,21 @@ The hosted demo uses:
 
 The frontend and backend redeploy automatically from the production branch.
 
+### Optional warm control
+
+The dedicated Cloudflare Worker maintains one **global fixed three-hour lease** after a
+production browser open. Visits/refreshes during an active lease reuse its exact expiry;
+they never extend it. Every ten minutes, an active lease causes a lightweight Render
+`/health` request. At expiry those pings stop, and Render may naturally sleep again.
+
+Daily at **09:00 IST (03:30 UTC)**, the Worker ensures a window through **12:00 IST**,
+preserving any existing later expiry. It immediately contacts the protected database
+heartbeat, which performs a fresh read-only `SELECT 1` through the existing PostgreSQL
+pool. No incident/checkpoint/evaluation rows or AI workflows are created by these endpoints.
+This database activity is intended to avoid prolonged inactivity, not a guarantee against
+Supabase pausing. All warming is best effort; the existing cold-start UI, polling, and
+recovery continue independently. See [warm-control operations](docs/warm-control.md).
+
 ---
 
 ## Current scope

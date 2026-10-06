@@ -6,6 +6,7 @@ import {
   type BackendRuntimeStatus,
   isLocalApiBase,
 } from "../lib/backend-runtime";
+import { activateWarmWindow } from "../lib/warm-window";
 
 interface BackendRuntimeContextValue {
   status: BackendRuntimeStatus;
@@ -29,6 +30,7 @@ export function BackendRuntimeProvider({ children }: { children: React.ReactNode
   const emittedColdStartRecovery = useRef(false);
 
   useEffect(() => {
+    void activateWarmWindow(isLocalApiBase());
     const monitor = monitorRef.current!;
     const unsubscribe = monitor.subscribe((snapshot) => {
       const wasUnavailable = ["waking", "long_wait"].includes(previousStatus.current);

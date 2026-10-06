@@ -35,6 +35,10 @@ backend/data/
 frontend/node_modules/
 frontend/.next/
 frontend/coverage/
+infrastructure/warm-control/node_modules/
+infrastructure/warm-control/.wrangler/
+infrastructure/warm-control/.dev.vars*
+infrastructure/warm-control/dist/
 
 # =============================================================================
 # OS / editor

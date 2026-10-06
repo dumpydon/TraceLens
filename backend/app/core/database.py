@@ -190,6 +190,13 @@ class Database:
             self._pool.close()
             self._pool = None
 
+    def heartbeat(self) -> None:
+        """Execute a fresh read-only round trip; never cache database readiness."""
+        with self.connect() as connection:
+            row = connection.execute("SELECT 1 AS alive").fetchone()
+            if row is None or row["alive"] != 1:
+                raise RuntimeError("Database heartbeat failed")
+
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SQLITE_SCHEMA if self.backend == "sqlite" else POSTGRES_SCHEMA)

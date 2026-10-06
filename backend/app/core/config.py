@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     langsmith_api_key: str | None = None
     langsmith_project: str = "tracelens-dev"
     frontend_origin: str | None = None
+    tracelens_keepalive_secret: SecretStr | None = None
     checkout_service_url: str = "http://127.0.0.1:8101"
     payment_service_url: str = "http://127.0.0.1:8102"
     graph_version: str = "v1"

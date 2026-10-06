@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tracelens-warm-control",
+  "account_id": "71600e008b6faafc09ce26b762e8411b",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-06",
+  "workers_dev": true,
+  "vars": {
+    "RENDER_API_BASE_URL": "https://tracelens-uh8e.onrender.com",
+    "FRONTEND_ORIGIN": "https://tracelens-seven.vercel.app"
+  },
+  "kv_namespaces": [
+    { "binding": "TRACELENS_STATE", "id": "59d36f117d7941139b71e5c2380e940e" }
+  ],
+  "triggers": { "crons": ["*/10 * * * *", "30 3 * * *"] },
+  "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": false } }
+}
