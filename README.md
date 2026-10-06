@@ -186,7 +186,15 @@ make install
 make ingest
 ```
 
-Start the four processes:
+Start the complete local stack:
+
+```bash
+make dev
+```
+
+This launches the payment and checkout lab services, FastAPI backend, and Next.js frontend concurrently.
+
+Or start the services individually when debugging:
 
 ```bash
 make lab-payment

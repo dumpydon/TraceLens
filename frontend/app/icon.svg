@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 22 22">
+  <!-- Sidebar brand-mark colors and sizing, with its existing Lucide Activity geometry. -->
+  <rect x="0.5" y="0.5" width="21" height="21" rx="4.5" fill="#0d1014" stroke="#363e49" />
+  <svg x="4" y="4" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#76b8e6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />
+  </svg>
+</svg>

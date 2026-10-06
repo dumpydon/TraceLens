@@ -5,6 +5,9 @@ install:
 	.venv/bin/pip install -e 'backend[dev]'
 	cd frontend && npm install
 
+dev:
+	@bash scripts/dev-stack.sh
+
 backend:
 	PYTHONPATH=backend:. .venv/bin/uvicorn app.main:app --reload --port 8000
 
